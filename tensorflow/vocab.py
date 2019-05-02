@@ -40,7 +40,7 @@ class Vocab(object):
         self.initial_tokens = initial_tokens if initial_tokens is not None else []
         self.initial_tokens.extend([self.pad_token, self.unk_token])
         for token in self.initial_tokens:
-            self.add(token)
+            self.add(token)                 # 都是字典，token_cnt表示key:word，value:词出现的次数
 
         if filename is not None:
             self.load_from_file(filename)

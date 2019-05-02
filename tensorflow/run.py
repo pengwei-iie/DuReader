@@ -18,9 +18,7 @@
 This module prepares and runs the whole system.
 """
 import sys
-if sys.version[0] == '2':
-    reload(sys)
-    sys.setdefaultencoding("utf-8")
+
 sys.path.append('..')
 import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
@@ -48,7 +46,7 @@ def parse_args():
     parser.add_argument('--gpu', type=str, default='0',
                         help='specify gpu device')
 
-    train_settings = parser.add_argument_group('train settings')
+    train_settings = parser.add_argument_group('train settings')  # 定义一个组
     train_settings.add_argument('--optim', default='adam',
                                 help='optimizer type')
     train_settings.add_argument('--learning_rate', type=float, default=0.001,
@@ -118,9 +116,9 @@ def prepare(args):
 
     logger.info('Building vocabulary...')
     brc_data = BRCDataset(args.max_p_num, args.max_p_len, args.max_q_len,
-                          args.train_files, args.dev_files, args.test_files)
-    vocab = Vocab(lower=True)
-    for word in brc_data.word_iter('train'):
+                          args.train_files, args.dev_files, args.test_files)    # 给训练集增加了每篇文档最相关的段落，sample['passages']，验证和测试也是，只不过用的是问题和段落算的召回
+    vocab = Vocab(lower=True)                                                   # 目前只有blank和unk
+    for word in brc_data.word_iter('train'):    # 问题里和一个样例中的每个段落（5个段落代表5篇文章）的token
         vocab.add(word)
 
     unfiltered_vocab_size = vocab.size()

@@ -60,12 +60,12 @@ class BRCDataset(object):
         """
         with open(data_path) as fin:
             data_set = []
-            for lidx, line in enumerate(fin):
+            for lidx, line in enumerate(fin):   # 对每一个样本（多文档多段落）
                 sample = json.loads(line.strip())
                 if train:
                     if len(sample['answer_spans']) == 0:
                         continue
-                    if sample['answer_spans'][0][1] >= self.max_p_len:
+                    if sample['answer_spans'][0][1] >= self.max_p_len:  # 对选出来的【【15, 65】】，过滤掉大于最大长度的文档
                         continue
 
                 if 'answer_docs' in sample:
@@ -74,16 +74,16 @@ class BRCDataset(object):
                 sample['question_tokens'] = sample['segmented_question']
 
                 sample['passages'] = []
-                for d_idx, doc in enumerate(sample['documents']):
-                    if train:
+                for d_idx, doc in enumerate(sample['documents']):   # 对每一篇文档处理
+                    if train:                                       # 把被选择的和未被选择的最相关的段落都加到sample['passages']
                         most_related_para = doc['most_related_para']
                         sample['passages'].append(
                             {'passage_tokens': doc['segmented_paragraphs'][most_related_para],
                              'is_selected': doc['is_selected']}
                         )
                     else:
-                        para_infos = []
-                        for para_tokens in doc['segmented_paragraphs']:
+                        para_infos = [] # 存的是段落，段落和问题的common在问题长度的占比，以及段落的长度
+                        for para_tokens in doc['segmented_paragraphs']: # 对一篇文章里的每一段
                             question_tokens = sample['segmented_question']
                             common_with_question = Counter(para_tokens) & Counter(question_tokens)
                             correct_preds = sum(common_with_question.values())
@@ -94,9 +94,9 @@ class BRCDataset(object):
                             para_infos.append((para_tokens, recall_wrt_question, len(para_tokens)))
                         para_infos.sort(key=lambda x: (-x[1], x[2]))
                         fake_passage_tokens = []
-                        for para_info in para_infos[:1]:
+                        for para_info in para_infos[:1]:    # 只取第一个最高的
                             fake_passage_tokens += para_info[0]
-                        sample['passages'].append({'passage_tokens': fake_passage_tokens})
+                        sample['passages'].append({'passage_tokens': fake_passage_tokens})  # 把最高的那个段落加到sample['passages']
                 data_set.append(sample)
         return data_set
 
