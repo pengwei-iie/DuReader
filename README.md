@@ -19,13 +19,14 @@ For more details about DuReader dataset please refer to [DuReader Homepage](http
 
 ### Download Thirdparty Dependencies
 We use Bleu and Rouge as evaluation metrics, the calculation of these metrics relies on the scoring scripts under "https://github.com/tylin/coco-caption", to download them, run:
-
+this has been done and the files are saved in utils/metric
 ```
 cd utils && bash download_thirdparty.sh
 ```
 
 ### Preprocess the Data
 After the dataset is downloaded, there is still some work to do to run the baseline systems. DuReader dataset offers rich amount of documents for every user question, the documents are too long for popular RC models to cope with. In our baseline models, we preprocess the train set and development set data by selecting the paragraph that is most related to the answer string, while for inferring(no available golden answer), we select the paragraph that is most related to the question string. The preprocessing strategy is implemented in `utils/preprocess.py`. To preprocess the raw data, you should first segment 'question', 'title', 'paragraphs' and then store the segemented result into 'segmented_question', 'segmented_title', 'segmented_paragraphs' like the downloaded preprocessed data, then run:
+this has been done and the processed data are saved in demo/data
 ```
 cat data/raw/trainset/search.train.json | python utils/preprocess.py > data/preprocessed/trainset/search.train.json
 ```
@@ -128,7 +129,7 @@ We also implements the BIDAF and Match-LSTM models based on Tensorflow 1.0. You 
 
 #### Preparation
 Before training the model, we have to make sure that the data is ready. For preparation, we will check the data files, make directories and extract a vocabulary for later use. You can run the following command to do this with a specified task name:
-
+this has been done and the vocab is saved in data/vocab
 ```
 python run.py --prepare
 ```
