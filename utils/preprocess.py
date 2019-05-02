@@ -17,11 +17,7 @@
 """
 This module finds the most related paragraph of each document according to recall.
 """
-
 import sys
-if sys.version[0] == '2':
-    reload(sys)
-    sys.setdefaultencoding("utf-8")
 import json
 from collections import Counter
 
@@ -30,7 +26,7 @@ def precision_recall_f1(prediction, ground_truth):
     """
     This function calculates and returns the precision, recall and f1-score
     Args:
-        prediction: prediction string or list to be matched
+        prediction: prediction string or list to be matched,一篇文档分好词的
         ground_truth: golden string or list reference
     Returns:
         floats of (p, r, f1)
@@ -45,7 +41,7 @@ def precision_recall_f1(prediction, ground_truth):
         ground_truth_tokens = ground_truth.split()
     else:
         ground_truth_tokens = ground_truth
-    common = Counter(prediction_tokens) & Counter(ground_truth_tokens)
+    common = Counter(prediction_tokens) & Counter(ground_truth_tokens)  # 找两个集合里的重复部分，次数是较少的一边
     num_same = sum(common.values())
     if num_same == 0:
         return 0, 0, 0
@@ -88,7 +84,7 @@ def metric_max_over_ground_truths(metric_fn, prediction, ground_truths):
     This function calculates and returns the precision, recall and f1-score
     Args:
         metric_fn: metric function pointer which calculates scores according to corresponding logic.
-        prediction: prediction string or list to be matched
+        prediction: prediction string or list to be matched，一篇文档
         ground_truth: golden string or list reference
     Returns:
         floats of (p, r, f1)
@@ -151,13 +147,13 @@ def find_fake_answer(sample):
     Raises:
         None
     """
-    for doc in sample['documents']:
+    for doc in sample['documents']: # 对每一个文档
         most_related_para = -1
         most_related_para_len = 999999
-        max_related_score = 0
-        for p_idx, para_tokens in enumerate(doc['segmented_paragraphs']):
-            if len(sample['segmented_answers']) > 0:
-                related_score = metric_max_over_ground_truths(recall,
+        max_related_score = 0                                               # doc['segmented_paragraphs']二维的，是一篇文章的多个段落
+        for p_idx, para_tokens in enumerate(doc['segmented_paragraphs']):   # para_tokens 对每一个段落
+            if len(sample['segmented_answers']) > 0:                        # sample['segmented_answers'] 多个候选答案
+                related_score = metric_max_over_ground_truths(recall,       # 对所有的答案都会计算一个得分，选最高的
                                                               para_tokens,
                                                               sample['segmented_answers'])
             else:
@@ -169,7 +165,7 @@ def find_fake_answer(sample):
                 most_related_para_len = len(para_tokens)
                 max_related_score = related_score
         doc['most_related_para'] = most_related_para
-
+    # 下面开始选答案来自那个文档，以及答案片段计算
     sample['answer_docs'] = []
     sample['answer_spans'] = []
     sample['fake_answers'] = []
@@ -179,22 +175,22 @@ def find_fake_answer(sample):
     best_match_d_idx, best_match_span = -1, [-1, -1]
     best_fake_answer = None
     answer_tokens = set()
-    for segmented_answer in sample['segmented_answers']:
+    for segmented_answer in sample['segmented_answers']:    # 对于所有的候选答案生成一个set集合
         answer_tokens = answer_tokens | set([token for token in segmented_answer])
-    for d_idx, doc in enumerate(sample['documents']):
-        if not doc['is_selected']:
+    for d_idx, doc in enumerate(sample['documents']):       # 对每一个文档
+        if not doc['is_selected']:                          # 没有被选择的文档可以直接过滤掉
             continue
         if doc['most_related_para'] == -1:
             doc['most_related_para'] = 0
-        most_related_para_tokens = doc['segmented_paragraphs'][doc['most_related_para']][:1000]
-        for start_tidx in range(len(most_related_para_tokens)):
+        most_related_para_tokens = doc['segmented_paragraphs'][doc['most_related_para']][:1000] # 选择文档里最相关的那个段落
+        for start_tidx in range(len(most_related_para_tokens)): # 从前面开始，找到在答案集合里有的那个词。然后再从结尾开始，计算每一个子串的得分
             if most_related_para_tokens[start_tidx] not in answer_tokens:
-                continue
+                continue                                        # 计算很久，所有的子串都计算
             for end_tidx in range(len(most_related_para_tokens) - 1, start_tidx - 1, -1):
                 span_tokens = most_related_para_tokens[start_tidx: end_tidx + 1]
                 if len(sample['segmented_answers']) > 0:
                     match_score = metric_max_over_ground_truths(f1_score, span_tokens,
-                                                                sample['segmented_answers'])
+                                                                sample['segmented_answers'])    # 计算的是最相关片段和答案F1值
                 else:
                     match_score = 0
                 if match_score == 0:
@@ -212,7 +208,24 @@ def find_fake_answer(sample):
 
 
 if __name__ == '__main__':
-    for line in sys.stdin:
-        sample = json.loads(line)
+    # for line in sys.stdin:
+    line = './../data/demo/devset/search.prosmall.json'
+    save_path = './save_path.json'
+    with open(line, 'r', encoding='utf-8') as f:
+        sample = json.load(f)
+        # sample = json.loads(line)
         find_fake_answer(sample)
-        print(json.dumps(sample, encoding='utf8', ensure_ascii=False))
+        # print(json.dump(sample, encoding='utf8', ensure_ascii=False))
+    # 存文件
+    with open(save_path, 'w', encoding='utf-8') as out:
+        print(json.dump(sample, out, ensure_ascii=False))
+
+    # ./../data/demo/devset/search.rawsmall.json
+
+    # jsonStr = '{"name":"aspiring", "age": 17, "hobby": ["money","power", "read"],"parames":{"a":1,"b":2}}'
+    #
+    # # 将json格式的字符串转为python数据类型的对象
+    # jsonData = json.loads(jsonStr)
+    # print(jsonData)
+    # print(type(jsonData))
+    # print(jsonData['hobby'])
