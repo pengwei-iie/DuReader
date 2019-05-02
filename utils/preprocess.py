@@ -212,13 +212,15 @@ if __name__ == '__main__':
     line = './../data/demo/devset/search.prosmall.json'
     save_path = './save_path.json'
     with open(line, 'r', encoding='utf-8') as f:
-        sample = json.load(f)
-        # sample = json.loads(line)
-        find_fake_answer(sample)
-        # print(json.dump(sample, encoding='utf8', ensure_ascii=False))
-    # 存文件
-    with open(save_path, 'w', encoding='utf-8') as out:
-        print(json.dump(sample, out, ensure_ascii=False))
+        for line in f:
+            sample = json.loads(line)
+            # sample = json.loads(line)
+            find_fake_answer(sample)
+            # print(json.dump(sample, encoding='utf8', ensure_ascii=False))
+            # 存文件,追加
+            with open(save_path, 'a', encoding='utf-8') as out:
+                json.dump(sample, out, ensure_ascii=False)
+                # out.write('\n')
 
     # ./../data/demo/devset/search.rawsmall.json
 
