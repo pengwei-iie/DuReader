@@ -43,8 +43,8 @@ def parse_args():
                         help='evaluate the model on dev set')
     parser.add_argument('--predict', action='store_true',
                         help='predict the answers for test set with trained model')
-    parser.add_argument('--gpu', type=str, default='0',
-                        help='specify gpu device')
+    # parser.add_argument('--gpu', type=str, default='0',
+    #                     help='specify gpu device')
 
     train_settings = parser.add_argument_group('train settings')  # 定义一个组
     train_settings.add_argument('--optim', default='adam',
@@ -146,7 +146,7 @@ def train(args):
     with open(os.path.join(args.vocab_dir, 'vocab.data'), 'rb') as fin:
         vocab = pickle.load(fin)
     brc_data = BRCDataset(args.max_p_num, args.max_p_len, args.max_q_len,
-                          args.train_files, args.dev_files)
+                          args.train_files, args.dev_files)     # 5, 500, 60.训练的时候不需要测试集
     logger.info('Converting text into ids...')
     brc_data.convert_to_ids(vocab)
     logger.info('Initialize the model...')

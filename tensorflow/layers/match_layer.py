@@ -89,11 +89,11 @@ class AttentionFlowMatchLayer(object):
         Match the passage_encodes with question_encodes using Attention Flow Match algorithm
         """
         with tf.variable_scope('bidaf'):
-            sim_matrix = tf.matmul(passage_encodes, question_encodes, transpose_b=True)
-            context2question_attn = tf.matmul(tf.nn.softmax(sim_matrix, -1), question_encodes)
-            b = tf.nn.softmax(tf.expand_dims(tf.reduce_max(sim_matrix, 2), 1), -1)
-            question2context_attn = tf.tile(tf.matmul(b, passage_encodes),
-                                         [1, tf.shape(passage_encodes)[1], 1])
+            sim_matrix = tf.matmul(passage_encodes, question_encodes, transpose_b=True)         # b转置再操作；passage_encodes和question_encodes都是三维的；得到len（pa）×len（q）
+            context2question_attn = tf.matmul(tf.nn.softmax(sim_matrix, -1), question_encodes)  # 默认就是-1，对最后一维进行操作 b*len(pa)*hidden
+            b = tf.nn.softmax(tf.expand_dims(tf.reduce_max(sim_matrix, 2), 1), -1)              # b*1*len(pa)
+            question2context_attn = tf.tile(tf.matmul(b, passage_encodes),                      # b*1*hidden
+                                         [1, tf.shape(passage_encodes)[1], 1])                  # b*len(pa)*hidden
             concat_outputs = tf.concat([passage_encodes, context2question_attn,
                                         passage_encodes * context2question_attn,
                                         passage_encodes * question2context_attn], -1)

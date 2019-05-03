@@ -123,7 +123,7 @@ class RCModel(object):
         Employs two Bi-LSTMs to encode passage and question separately
         """
         with tf.variable_scope('passage_encoding'):
-            self.sep_p_encodes, _ = rnn('bi-lstm', self.p_emb, self.p_length, self.hidden_size)
+            self.sep_p_encodes, _ = rnn('bi-lstm', self.p_emb, self.p_length, self.hidden_size) # 得到rnn的输出和状态
         with tf.variable_scope('question_encoding'):
             self.sep_q_encodes, _ = rnn('bi-lstm', self.q_emb, self.q_length, self.hidden_size)
         if self.use_dropout:
@@ -141,7 +141,7 @@ class RCModel(object):
         else:
             raise NotImplementedError('The algorithm {} is not implemented.'.format(self.algo))
         self.match_p_encodes, _ = match_layer.match(self.sep_p_encodes, self.sep_q_encodes,
-                                                    self.p_length, self.q_length)
+                                                    self.p_length, self.q_length)                   # 连接了四个向量，最后得到b*len(pa)*1200
         if self.use_dropout:
             self.match_p_encodes = tf.nn.dropout(self.match_p_encodes, self.dropout_keep_prob)
 
@@ -151,7 +151,7 @@ class RCModel(object):
         """
         with tf.variable_scope('fusion'):
             self.fuse_p_encodes, _ = rnn('bi-lstm', self.match_p_encodes, self.p_length,
-                                         self.hidden_size, layer_num=1)
+                                         self.hidden_size, layer_num=1)                             # 经过双向RNN,变成前向+后向，150+150
             if self.use_dropout:
                 self.fuse_p_encodes = tf.nn.dropout(self.fuse_p_encodes, self.dropout_keep_prob)
 

@@ -52,7 +52,7 @@ def rnn(rnn_type, inputs, length, hidden_size, layer_num=1, dropout_keep_prob=No
         )
         states_fw, states_bw = states
         if rnn_type.endswith('lstm'):
-            c_fw = [state_fw.c for state_fw in states_fw]
+            c_fw = [state_fw.c for state_fw in states_fw]   # 因为有多层
             h_fw = [state_fw.h for state_fw in states_fw]
             c_bw = [state_bw.c for state_bw in states_bw]
             h_bw = [state_bw.h for state_bw in states_bw]
