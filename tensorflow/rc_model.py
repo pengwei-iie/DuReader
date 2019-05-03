@@ -81,6 +81,10 @@ class RCModel(object):
         """
         start_t = time.time()
         self._setup_placeholders()
+        # num_gpus = 4
+        #
+        # for i in range(num_gpus):
+        #     with tf.device('/gpu:%d', i):
         self._embed()
         self._encode()
         self._match()
