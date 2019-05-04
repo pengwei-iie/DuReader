@@ -246,7 +246,7 @@ class RCModel(object):
                 n_batch_loss = 0
         return 1.0 * total_loss / total_num
 
-    def train(self, data, epochs, batch_size, save_dir, save_prefix,
+    def train(self, data, epochs, batch_size, save_dir, save_prefix, rand_seed,
               dropout_keep_prob=1.0, evaluate=True):
         """
         Train the model with data
@@ -276,7 +276,7 @@ class RCModel(object):
                     self.logger.info('Dev eval result: {}'.format(bleu_rouge))
 
                     if bleu_rouge['Bleu-4'] > max_bleu_4:
-                        self.save(save_dir, save_prefix)
+                        self.save(save_dir, save_prefix, rand_seed)
                         max_bleu_4 = bleu_rouge['Bleu-4']
                 else:
                     self.logger.warning('No dev set is loaded for evaluation in the dataset!')
@@ -398,10 +398,11 @@ class RCModel(object):
                     max_prob = prob
         return (best_start, best_end), max_prob
 
-    def save(self, model_dir, model_prefix):
+    def save(self, model_dir, model_prefix, rand_seed):
         """
         Saves the model into model_dir with model_prefix as the model indicator
         """
+        model_prefix = model_prefix + bytes(rand_seed)
         self.saver.save(self.sess, os.path.join(model_dir, model_prefix))
         self.logger.info('Model saved in {}, with prefix {}.'.format(model_dir, model_prefix))
 

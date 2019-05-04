@@ -28,7 +28,7 @@ import logging
 from dataset import BRCDataset
 from vocab import Vocab
 from rc_model import RCModel
-
+import tensorflow as tf
 
 def parse_args():
     """
@@ -63,6 +63,8 @@ def parse_args():
     model_settings = parser.add_argument_group('model settings')
     model_settings.add_argument('--algo', choices=['BIDAF', 'MLSTM'], default='BIDAF',
                                 help='choose the algorithm to use')
+    model_settings.add_argument('--rand_seed', type=int, default=1,
+                                help='set the random seed')
     model_settings.add_argument('--embed_size', type=int, default=300,
                                 help='size of the embeddings')
     model_settings.add_argument('--hidden_size', type=int, default=150,
@@ -153,7 +155,7 @@ def train(args):
     rc_model = RCModel(vocab, args)
     logger.info('Training the model...')
     rc_model.train(brc_data, args.epochs, args.batch_size, save_dir=args.model_dir,
-                   save_prefix=args.algo,
+                   save_prefix=args.algo, rand_seed=args.rand_seed,
                    dropout_keep_prob=args.dropout_keep_prob)
     logger.info('Done with model training!')
 
@@ -231,6 +233,7 @@ def run():
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
+    tf.set_random_seed(args.rand_seed)
     if args.prepare:
         prepare(args)
     if args.train:
