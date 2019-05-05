@@ -402,7 +402,7 @@ class RCModel(object):
         """
         Saves the model into model_dir with model_prefix as the model indicator
         """
-        model_prefix = model_prefix + bytes(rand_seed)
+        model_prefix = model_prefix + str(rand_seed)
         self.saver.save(self.sess, os.path.join(model_dir, model_prefix))
         self.logger.info('Model saved in {}, with prefix {}.'.format(model_dir, model_prefix))
 
