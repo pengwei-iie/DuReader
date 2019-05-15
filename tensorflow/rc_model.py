@@ -33,7 +33,7 @@ from layers.basic_rnn import rnn
 from layers.match_layer import MatchLSTMLayer
 from layers.match_layer import AttentionFlowMatchLayer
 from layers.pointer_net import PointerNetDecoder
-
+import tfu
 
 class RCModel(object):
     """
@@ -89,6 +89,7 @@ class RCModel(object):
         self._encode()
         self._match()
         self._fuse()
+        self._self_attention()  # add self_attention
         self._decode()
         self._compute_loss()
         self._create_train_op()
@@ -107,6 +108,16 @@ class RCModel(object):
         self.start_label = tf.placeholder(tf.int32, [None])
         self.end_label = tf.placeholder(tf.int32, [None])
         self.dropout_keep_prob = tf.placeholder(tf.float32)
+
+    def fusion(self, old, new, name):
+        # 连接特征
+        tmp = tf.concat([old, new, old*new, old-new], axis=2)   # b, len, hidden*4
+        # 激活
+        new_sens_tanh = tf.nn.tanh(tfu.dense(tmp, self.hidden_size*2, scope=name))
+        # gate
+        gate = tf.nn.sigmoid(tfu.dense(tmp, 1, scope=name+"sigmoid"))
+        outputs = gate*new_sens_tanh + (1-gate)*old
+        return outputs
 
     def _embed(self):
         """
@@ -144,20 +155,49 @@ class RCModel(object):
             match_layer = AttentionFlowMatchLayer(self.hidden_size)
         else:
             raise NotImplementedError('The algorithm {} is not implemented.'.format(self.algo))
-        self.match_p_encodes, _ = match_layer.match(self.sep_p_encodes, self.sep_q_encodes,
+        self.match_p_encodes, self.match_q_encodes = match_layer.match(self.sep_p_encodes, self.sep_q_encodes,
                                                     self.p_length, self.q_length)                   # 连接了四个向量，最后得到b*len(pa)*1200
         if self.use_dropout:
             self.match_p_encodes = tf.nn.dropout(self.match_p_encodes, self.dropout_keep_prob)
+            self.match_q_encodes = tf.nn.dropout(self.match_q_encodes, self.dropout_keep_prob)
 
     def _fuse(self):
         """
         Employs Bi-LSTM again to fuse the context information after match layer
         """
-        with tf.variable_scope('fusion'):
+        with tf.variable_scope('fusion_p'):
             self.fuse_p_encodes, _ = rnn('bi-lstm', self.match_p_encodes, self.p_length,
-                                         self.hidden_size, layer_num=1)                             # 经过双向RNN,变成前向+后向，150+150
-            if self.use_dropout:
-                self.fuse_p_encodes = tf.nn.dropout(self.fuse_p_encodes, self.dropout_keep_prob)
+                                         self.hidden_size, layer_num=1)  # 经过双向RNN,变成前向+后向，150+150
+        with tf.variable_scope('fusion_q'):
+            self.fuse_q_encodes, _ = rnn('bi-lstm', self.match_q_encodes, self.q_length,
+                                         self.hidden_size, layer_num=1)  # 经过双向RNN,变成前向+后向，150+150
+        if self.use_dropout:
+            self.fuse_p_encodes = tf.nn.dropout(self.fuse_p_encodes, self.dropout_keep_prob)
+            self.fuse_q_encodes = tf.nn.dropout(self.fuse_q_encodes, self.dropout_keep_prob)
+
+    def _self_attention(self):
+        # 双线性softmax
+        with tf.variable_scope('bi_linear'):
+            # 经过双向lstm，最后一维变成300
+            batch = tf.shape(self.fuse_p_encodes)[0]
+            W_bi = tf.get_variable("W_bi", [self.hidden_size * 2, self.hidden_size * 2],
+                                   initializer=tf.random_normal_initializer(mean=0.0, stddev=0.1, seed=None, dtype=tf.float32))
+            tmp = tf.reshape(self.fuse_p_encodes, [-1, self.hidden_size*2])
+            tmp = tf.matmul(tmp, W_bi)
+            tmp = tf.reshape(tmp, [batch, -1, self.hidden_size*2])
+            # 以上就是通过reshape的方式进行双线性变化
+            L = tf.nn.softmax(tf.matmul(tmp, self.fuse_p_encodes, transpose_b=True))
+            self.binear_passage = tf.matmul(L, self.fuse_p_encodes)
+            self.binear_passage = self.fusion(self.fuse_p_encodes, self.binear_passage, name="binear")
+
+            # 将最后一维变成self.hidden_size
+            self.binear_passage = tfu.dense(self.binear_passage, 1, "to_hidden_size")
+            # 需要再经过一个双向LISTM
+            with tf.variable_scope('self_attention'):
+                self.fina_passage, _ = rnn('bi-lstm', self.binear_passage, self.p_length,
+                                             self.hidden_size, layer_num=1)  # 经过双向RNN,变成前向+后向，150+150
+
+            # 对问题操作，后续
 
     def _decode(self):
         """
@@ -169,12 +209,12 @@ class RCModel(object):
         with tf.variable_scope('same_question_concat'):
             batch_size = tf.shape(self.start_label)[0]
             concat_passage_encodes = tf.reshape(
-                self.fuse_p_encodes,
+                self.fina_passage,
                 [batch_size, -1, 2 * self.hidden_size]
             )
             no_dup_question_encodes = tf.reshape(
-                self.sep_q_encodes,
-                [batch_size, -1, tf.shape(self.sep_q_encodes)[1], 2 * self.hidden_size]
+                self.fuse_q_encodes,
+                [batch_size, -1, tf.shape(self.fuse_q_encodes)[1], 2 * self.hidden_size]
             )[0:, 0, 0:, 0:]
         decoder = PointerNetDecoder(self.hidden_size)
         self.start_probs, self.end_probs = decoder.decode(concat_passage_encodes,
