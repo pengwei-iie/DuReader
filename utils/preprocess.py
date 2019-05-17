@@ -84,7 +84,7 @@ def metric_max_over_ground_truths(metric_fn, prediction, ground_truths):
     This function calculates and returns the precision, recall and f1-score
     Args:
         metric_fn: metric function pointer which calculates scores according to corresponding logic.
-        prediction: prediction string or list to be matched，一篇文档
+        prediction: prediction string or list to be matched，一个段落
         ground_truth: golden string or list reference
     Returns:
         floats of (p, r, f1)
@@ -209,9 +209,9 @@ def find_fake_answer(sample):
 
 if __name__ == '__main__':
     # for line in sys.stdin:
-    line = './../data/demo/devset/search.prosmall.json'
+    line = './../data/demo/devset/search.dev.json'
     save_path = './save_path.json'
-    with open(line, 'r', encoding='utf-8') as f:
+    with open(line, 'r', encoding='utf-8') as f:    # 加载未处理的数据
         for line in f:
             sample = json.loads(line)
             # sample = json.loads(line)
