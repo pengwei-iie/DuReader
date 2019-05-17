@@ -144,7 +144,7 @@ class RCModel(object):
             match_layer = AttentionFlowMatchLayer(self.hidden_size)
         else:
             raise NotImplementedError('The algorithm {} is not implemented.'.format(self.algo))
-        self.match_p_encodes, _ = match_layer.match(self.sep_p_encodes, self.sep_q_encodes,
+        self.match_p_encodes, self.match_q_encodes = match_layer.match(self.sep_p_encodes, self.sep_q_encodes,
                                                     self.p_length, self.q_length)                   # 连接了四个向量，最后得到b*len(pa)*1200
         if self.use_dropout:
             self.match_p_encodes = tf.nn.dropout(self.match_p_encodes, self.dropout_keep_prob)
@@ -402,7 +402,8 @@ class RCModel(object):
         """
         Saves the model into model_dir with model_prefix as the model indicator
         """
-        model_prefix = model_prefix + str(rand_seed)
+        # model_prefix = model_prefix + str(rand_seed)
+        model_prefix = model_prefix
         self.saver.save(self.sess, os.path.join(model_dir, model_prefix))
         self.logger.info('Model saved in {}, with prefix {}.'.format(model_dir, model_prefix))
 
