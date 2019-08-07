@@ -37,13 +37,15 @@ def parse_args():
     parser = argparse.ArgumentParser('Reading Comprehension on BaiduRC dataset')
     parser.add_argument('--prepare', action='store_true',
                         help='create the directories, prepare the vocabulary and embeddings')
+    parser.add_argument('--use_pretrained', action='store_true',
+                        help='use pretrained vocab')
     parser.add_argument('--train', action='store_true',
                         help='train the model')
     parser.add_argument('--evaluate', action='store_true',
                         help='evaluate the model on dev set')
     parser.add_argument('--predict', action='store_true',
                         help='predict the answers for test set with trained model')
-    parser.add_argument('--gpu', type=str, default='0',
+    parser.add_argument('--gpu', type=str, default='1',
                         help='specify gpu device')
 
     train_settings = parser.add_argument_group('train settings')  # 定义一个组
@@ -92,6 +94,8 @@ def parse_args():
                                help='the dir with preprocessed baidu reading comprehension data')
     path_settings.add_argument('--vocab_dir', default='../data/vocab/',
                                help='the dir to save vocabulary')
+    path_settings.add_argument('--pretrained_dir', default='./wordvec/glove.6B.300d.txt',
+                               help='the dir to load pretrained vocab')
     path_settings.add_argument('--model_dir', default='../data/models_randseed1/',
                                help='the dir to store models')
     path_settings.add_argument('--result_dir', default='../data/results/',
@@ -130,7 +134,10 @@ def prepare(args):
                                                                             vocab.size()))
 
     logger.info('Assigning embeddings...')
-    vocab.randomly_init_embeddings(args.embed_size)
+    if args.use_pretrained:
+        vocab.load_pretrained_embeddings(args.pretrained_dir)
+    else:
+        vocab.randomly_init_embeddings(args.embed_size)
 
     logger.info('Saving vocab...')
     with open(os.path.join(args.vocab_dir, 'vocab.data'), 'wb') as fout:
