@@ -703,6 +703,16 @@ def dense(inputs, hidden, use_bias=True, scope="dense", reuse=False):
     return tf.layers.dense(inputs, hidden, use_bias=use_bias, name=scope, reuse=reuse)
 
 
+def fusion(self, old, new, name):
+    # 连接特征
+    tmp = tf.concat([old, new, old*new, old-new], axis=2)   # b, len, hidden*4
+    # 激活
+    new_sens_tanh = tf.nn.tanh(dense(tmp, self.hidden_size*2, scope=name))
+    # gate
+    gate = tf.nn.sigmoid(dense(tmp, 1, scope=name+"sigmoid"))
+    outputs = gate*new_sens_tanh + (1-gate)*old
+    return outputs
+
 def batch_norm(x, is_train, scope='batch_norm'):
     with tf.variable_scope(scope):
         res = tf.layers.batch_normalization(x, training=is_train)

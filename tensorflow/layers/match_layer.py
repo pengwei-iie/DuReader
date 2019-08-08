@@ -84,15 +84,15 @@ class AttentionFlowMatchLayer(object):
     def __init__(self, hidden_size):
         self.hidden_size = hidden_size
 
-    def fusion(self, old, new, name):
-        # 连接特征
-        tmp = tf.concat([old, new, old*new, old-new], axis=2)   # b, len, hidden*4
-        # 激活
-        new_sens_tanh = tf.nn.tanh(tfu.dense(tmp, self.hidden_size*2, scope=name))
-        # gate
-        gate = tf.nn.sigmoid(tfu.dense(tmp, 1, scope=name+"sigmoid"))
-        outputs = gate*new_sens_tanh + (1-gate)*old
-        return outputs
+    # def fusion(self, old, new, name):
+    #     # 连接特征
+    #     tmp = tf.concat([old, new, old*new, old-new], axis=2)   # b, len, hidden*4
+    #     # 激活
+    #     new_sens_tanh = tf.nn.tanh(tfu.dense(tmp, self.hidden_size*2, scope=name))
+    #     # gate
+    #     gate = tf.nn.sigmoid(tfu.dense(tmp, 1, scope=name+"sigmoid"))
+    #     outputs = gate*new_sens_tanh + (1-gate)*old
+    #     return outputs
 
     def match(self, passage_encodes, question_encodes, p_length, q_length):
         """
@@ -116,6 +116,6 @@ class AttentionFlowMatchLayer(object):
             # 问题中的词和文档中的所有词
             sim_matrix_j = tf.nn.softmax(sim_matrix, dim=1)
             question2context_attn = tf.matmul(sim_matrix_j, passage_encodes, transpose_a=True)
-            passage = self.fusion(passage_encodes, context2question_attn, name="pass_fusion")
-            question = self.fusion(question_encodes, question2context_attn, name="ques_fusion")
+            passage = tfu.fusion(passage_encodes, context2question_attn, name="pass_fusion")
+            question = tfu.fusion(question_encodes, question2context_attn, name="ques_fusion")
             return passage, question

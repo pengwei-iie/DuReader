@@ -86,7 +86,7 @@ class RCModel(object):
         # for i in range(num_gpus):
         #     with tf.device('/gpu:%d', i):
         self._embed()
-        self._fusion()
+        # self._fusion()
         self._encode()
         self._match()
         self._fuse()
@@ -124,15 +124,15 @@ class RCModel(object):
             self.p_emb = tf.nn.embedding_lookup(self.word_embeddings, self.p)
             self.q_emb = tf.nn.embedding_lookup(self.word_embeddings, self.q)
 
-    def _fusion(self, old, new, name):
-        # 连接特征
-        tmp = tf.concat([old, new, old*new, old-new], axis=2)   # b, len, hidden*4
-        # 激活
-        new_sens_tanh = tf.nn.tanh(tfu.dense(tmp, self.hidden_size*2, scope=name))
-        # gate
-        gate = tf.nn.sigmoid(tfu.dense(tmp, 1, scope=name+"sigmoid"))
-        outputs = gate*new_sens_tanh + (1-gate)*old
-        return outputs
+    # def fusion(self, old, new, name):
+    #     # 连接特征
+    #     tmp = tf.concat([old, new, old*new, old-new], axis=2)   # b, len, hidden*4
+    #     # 激活
+    #     new_sens_tanh = tf.nn.tanh(tfu.dense(tmp, self.hidden_size*2, scope=name))
+    #     # gate
+    #     gate = tf.nn.sigmoid(tfu.dense(tmp, 1, scope=name+"sigmoid"))
+    #     outputs = gate*new_sens_tanh + (1-gate)*old
+    #     return outputs
 
     def _encode(self):
         """
@@ -193,7 +193,7 @@ class RCModel(object):
             # 以上就是通过reshape的方式进行双线性变化
             L = tf.nn.softmax(tf.matmul(tmp, self.fuse_p_encodes, transpose_b=True))
             self.binear_passage = tf.matmul(L, self.fuse_p_encodes)
-            tmp = self._fusion(self.fuse_p_encodes, self.binear_passage, name="binear")
+            self.binear_passage = tfu.fusion(self.fuse_p_encodes, self.binear_passage, name="binear")
 
             # 将最后一维变成self.hidden_size
             # self.binear_passage = tfu.dense(self.binear_passage, 1, "to_hidden_size")
