@@ -86,6 +86,7 @@ class RCModel(object):
         # for i in range(num_gpus):
         #     with tf.device('/gpu:%d', i):
         self._embed()
+        self._fusion()
         self._encode()
         self._match()
         self._fuse()
@@ -109,16 +110,6 @@ class RCModel(object):
         self.end_label = tf.placeholder(tf.int32, [None])
         self.dropout_keep_prob = tf.placeholder(tf.float32)
 
-    def fusion(self, old, new, name):
-        # 连接特征
-        tmp = tf.concat([old, new, old*new, old-new], axis=2)   # b, len, hidden*4
-        # 激活
-        new_sens_tanh = tf.nn.tanh(tfu.dense(tmp, self.hidden_size*2, scope=name))
-        # gate
-        gate = tf.nn.sigmoid(tfu.dense(tmp, 1, scope=name+"sigmoid"))
-        outputs = gate*new_sens_tanh + (1-gate)*old
-        return outputs
-
     def _embed(self):
         """
         The embedding layer, question and passage share embeddings
@@ -132,6 +123,16 @@ class RCModel(object):
             )
             self.p_emb = tf.nn.embedding_lookup(self.word_embeddings, self.p)
             self.q_emb = tf.nn.embedding_lookup(self.word_embeddings, self.q)
+
+    def _fusion(self, old, new, name):
+        # 连接特征
+        tmp = tf.concat([old, new, old*new, old-new], axis=2)   # b, len, hidden*4
+        # 激活
+        new_sens_tanh = tf.nn.tanh(tfu.dense(tmp, self.hidden_size*2, scope=name))
+        # gate
+        gate = tf.nn.sigmoid(tfu.dense(tmp, 1, scope=name+"sigmoid"))
+        outputs = gate*new_sens_tanh + (1-gate)*old
+        return outputs
 
     def _encode(self):
         """
@@ -180,24 +181,35 @@ class RCModel(object):
         with tf.variable_scope('bi_linear'):
             # 经过双向lstm，最后一维变成300
             batch = tf.shape(self.fuse_p_encodes)[0]
+
+            # use xavier initialization
             W_bi = tf.get_variable("W_bi", [self.hidden_size * 2, self.hidden_size * 2],
-                                   initializer=tf.random_normal_initializer(mean=0.0, stddev=0.1, seed=None, dtype=tf.float32))
+                                   initializer=tf.contrib.layers.xavier_initializer())
+            # W_bi = tf.get_variable("W_bi", [self.hidden_size * 2, self.hidden_size * 2],
+            #                        initializer=tf.random_normal_initializer(mean=0.0, stddev=0.1, seed=None, dtype=tf.float32))
             tmp = tf.reshape(self.fuse_p_encodes, [-1, self.hidden_size*2])
             tmp = tf.matmul(tmp, W_bi)
             tmp = tf.reshape(tmp, [batch, -1, self.hidden_size*2])
             # 以上就是通过reshape的方式进行双线性变化
             L = tf.nn.softmax(tf.matmul(tmp, self.fuse_p_encodes, transpose_b=True))
             self.binear_passage = tf.matmul(L, self.fuse_p_encodes)
-            self.binear_passage = self.fusion(self.fuse_p_encodes, self.binear_passage, name="binear")
+            tmp = self._fusion(self.fuse_p_encodes, self.binear_passage, name="binear")
 
             # 将最后一维变成self.hidden_size
-            self.binear_passage = tfu.dense(self.binear_passage, 1, "to_hidden_size")
+            # self.binear_passage = tfu.dense(self.binear_passage, 1, "to_hidden_size")
             # 需要再经过一个双向LISTM
             with tf.variable_scope('self_attention'):
                 self.fina_passage, _ = rnn('bi-lstm', self.binear_passage, self.p_length,
                                              self.hidden_size, layer_num=1)  # 经过双向RNN,变成前向+后向，150+150
 
-            # 对问题操作，后续
+            # 对问题操作,自对其，后续
+            W_q = tf.get_variable("W_q", [self.hidden_size * 2, self.hidden_size * 2],
+                                   initializer=tf.contrib.layers.xavier_initializer())
+            tmp = tf.reshape(self.fuse_q_encodes, [-1, self.hidden_size * 2])
+            tmp = tf.matmul(tmp, W_q)
+            tmp = tf.reshape(tmp, [batch, -1, self.hidden_size * 2])
+            alpha = tf.nn.softmax(tmp)      # b, n_q, 300
+            self.self_ques = tf.matmul(alpha, self.fuse_q_encodes, transpose_b=True)
 
     def _decode(self):
         """
@@ -213,8 +225,8 @@ class RCModel(object):
                 [batch_size, -1, 2 * self.hidden_size]
             )
             no_dup_question_encodes = tf.reshape(
-                self.fuse_q_encodes,
-                [batch_size, -1, tf.shape(self.fuse_q_encodes)[1], 2 * self.hidden_size]
+                self.self_ques,
+                [batch_size, -1, tf.shape(self.self_ques)[1], 2 * self.hidden_size]
             )[0:, 0, 0:, 0:]
         decoder = PointerNetDecoder(self.hidden_size)
         self.start_probs, self.end_probs = decoder.decode(concat_passage_encodes,
