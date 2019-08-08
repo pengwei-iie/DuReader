@@ -116,6 +116,6 @@ class AttentionFlowMatchLayer(object):
             # 问题中的词和文档中的所有词
             sim_matrix_j = tf.nn.softmax(sim_matrix, dim=1)
             question2context_attn = tf.matmul(sim_matrix_j, passage_encodes, transpose_a=True)
-            passage = tfu.fusion(passage_encodes, context2question_attn, name="pass_fusion")
-            question = tfu.fusion(question_encodes, question2context_attn, name="ques_fusion")
+            passage = tfu.fusion(passage_encodes, context2question_attn, self.hidden_size, name="pass_fusion")
+            question = tfu.fusion(question_encodes, question2context_attn, self.hidden_size, name="ques_fusion")
             return passage, question

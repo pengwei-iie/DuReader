@@ -193,7 +193,7 @@ class RCModel(object):
             # 以上就是通过reshape的方式进行双线性变化
             L = tf.nn.softmax(tf.matmul(tmp, self.fuse_p_encodes, transpose_b=True))
             self.binear_passage = tf.matmul(L, self.fuse_p_encodes)
-            self.binear_passage = tfu.fusion(self.fuse_p_encodes, self.binear_passage, name="binear")
+            self.binear_passage = tfu.fusion(self.fuse_p_encodes, self.binear_passage, self.hidden_size, name="binear")
 
             # 将最后一维变成self.hidden_size
             # self.binear_passage = tfu.dense(self.binear_passage, 1, "to_hidden_size")

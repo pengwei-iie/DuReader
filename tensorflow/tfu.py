@@ -703,15 +703,35 @@ def dense(inputs, hidden, use_bias=True, scope="dense", reuse=False):
     return tf.layers.dense(inputs, hidden, use_bias=use_bias, name=scope, reuse=reuse)
 
 
-def fusion(self, old, new, name):
+def fusion(old, new, hidden_size, name):
     # 连接特征
     tmp = tf.concat([old, new, old*new, old-new], axis=2)   # b, len, hidden*4
     # 激活
-    new_sens_tanh = tf.nn.tanh(dense(tmp, self.hidden_size*2, scope=name))
+    new_sens_tanh = tf.nn.tanh(dense(tmp, hidden_size*2, scope=name))
     # gate
     gate = tf.nn.sigmoid(dense(tmp, 1, scope=name+"sigmoid"))
     outputs = gate*new_sens_tanh + (1-gate)*old
     return outputs
+
+
+def mask_softmax(x, mask, dim=-1):
+    """for reweight the softmax result. prevent the padding weights.
+       assume the softmax is conducted on the last dimension
+    Args:
+        x: [batch, *, len]
+        mask: [batch, len]
+    Return:
+        [bs, *, len]
+    """
+    mask = mask.float()
+    if mask.dim() < x.dim():
+        mask = mask.unsqueeze(1)
+    result = tf.nn.softmax(x * mask, dim=dim)
+    result = result * mask
+    result = result / (result.sum(dim=dim, keepdim=True) + 1e-13)
+    # return result.view(*x.size())
+    return result
+
 
 def batch_norm(x, is_train, scope='batch_norm'):
     with tf.variable_scope(scope):
