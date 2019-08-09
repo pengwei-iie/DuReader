@@ -101,8 +101,8 @@ def attend_pooling(pooling_vectors, ref_vector, hidden_size, scope=None):
                                                 num_outputs=hidden_size,
                                                 activation_fn=None))
         logits = tc.layers.fully_connected(U, num_outputs=1, activation_fn=None)
-        scores = tf.nn.softmax(logits, 1)
-        pooled_vector = tf.reduce_sum(pooling_vectors * scores, axis=1)
+        scores = tf.nn.softmax(logits, 1)   # b, len, 1
+        pooled_vector = tf.reduce_sum(pooling_vectors * scores, axis=1)     # b, len, hidden * b, len, 1
     return pooled_vector
 
 
@@ -152,8 +152,8 @@ class PointerNetDecoder(object):
             the probs of evary position to be start and end of the answer
         """
         with tf.variable_scope('pn_decoder'):
-            fake_inputs = tf.zeros([tf.shape(passage_vectors)[0], 2, 1])  # not used
-            sequence_len = tf.tile([2], [tf.shape(passage_vectors)[0]])
+            fake_inputs = tf.zeros([tf.shape(passage_vectors)[0], 2, 1])    # b, 2 ,1
+            sequence_len = tf.tile([2], [tf.shape(passage_vectors)[0]])     # b 元素都是2
             if init_with_question:
                 random_attn_vector = tf.Variable(tf.random_normal([1, self.hidden_size]),
                                                  trainable=True, name="random_attn_vector")
