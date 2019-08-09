@@ -180,7 +180,7 @@ class RCModel(object):
         # 双线性softmax
         with tf.variable_scope('bi_linear'):
             # 经过双向lstm，最后一维变成300
-            batch = tf.shape(self.fuse_p_encodes)[0]
+            batch_add5 = tf.shape(self.fuse_p_encodes)[0]
 
             # use xavier initialization
             W_bi = tf.get_variable("W_bi", [self.hidden_size * 2, self.hidden_size * 2],
@@ -189,7 +189,7 @@ class RCModel(object):
             #                        initializer=tf.random_normal_initializer(mean=0.0, stddev=0.1, seed=None, dtype=tf.float32))
             tmp = tf.reshape(self.fuse_p_encodes, [-1, self.hidden_size*2])
             tmp = tf.matmul(tmp, W_bi)
-            tmp = tf.reshape(tmp, [batch, -1, self.hidden_size*2])
+            tmp = tf.reshape(tmp, [batch_add5, -1, self.hidden_size*2])
             # 以上就是通过reshape的方式进行双线性变化
             L = tf.nn.softmax(tf.matmul(tmp, self.fuse_p_encodes, transpose_b=True))
             self.binear_passage = tf.matmul(L, self.fuse_p_encodes)
@@ -207,9 +207,9 @@ class RCModel(object):
                                    initializer=tf.contrib.layers.xavier_initializer())
             tmp = tf.reshape(self.fuse_q_encodes, [-1, self.hidden_size * 2])
             tmp = tf.matmul(tmp, W_q)
-            tmp = tf.reshape(tmp, [batch, -1, self.hidden_size * 2])
+            tmp = tf.reshape(tmp, [batch_add5, -1, self.hidden_size * 2])
             alpha = tf.nn.softmax(tmp)      # b, n_q, 300
-            self.self_ques = tf.matmul(alpha, self.fuse_q_encodes, transpose_b=True)
+            self.self_ques = alpha*self.fuse_q_encodes
 
     def _decode(self):
         """
@@ -223,11 +223,14 @@ class RCModel(object):
             concat_passage_encodes = tf.reshape(
                 self.fina_passage,
                 [batch_size, -1, 2 * self.hidden_size]
-            )
+            )       # fina_passage: b*5, len_p, hidden --> b, 5*len_p, hidden
+
+            # b, 5, len_q, hidden       [0:, 0, 0:, 0:] 表示只用第一个问题，因为5个问题都是一样的
             no_dup_question_encodes = tf.reshape(
                 self.self_ques,
                 [batch_size, -1, tf.shape(self.self_ques)[1], 2 * self.hidden_size]
             )[0:, 0, 0:, 0:]
+
         decoder = PointerNetDecoder(self.hidden_size)
         self.start_probs, self.end_probs = decoder.decode(concat_passage_encodes,
                                                           no_dup_question_encodes)
