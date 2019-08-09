@@ -723,13 +723,21 @@ def mask_softmax(x, mask, dim=-1):
     Return:
         [bs, *, len]
     """
-    mask = mask.float()
-    if mask.dim() < x.dim():
-        mask = mask.unsqueeze(1)
+    # mask = mask.float()
+    # if mask.dim() < x.dim():
+    #     mask = mask.unsqueeze(1)
+    # result = tf.nn.softmax(x * mask, dim=dim)
+    # result = result * mask
+    # result = result / (result.sum(dim=dim, keepdim=True) + 1e-13)
+    ##  return result.view(*x.size())
+
+    # if tf.rank(mask) < tf.rank(x):
+    mask = tf.expand_dims(mask, 1)
+    mask = tf.to_float(mask)
     result = tf.nn.softmax(x * mask, dim=dim)
     result = result * mask
-    result = result / (result.sum(dim=dim, keepdim=True) + 1e-13)
-    # return result.view(*x.size())
+    result = result / (tf.reduce_sum(result, axis=dim, keep_dims=True) + 1e-13)
+    # keep_dims:表示是否保留原始数据的维度，False相当于执行完后原始数据就会少一个维度
     return result
 
 

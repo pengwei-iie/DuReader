@@ -162,7 +162,7 @@ class RCModel(object):
         else:
             raise NotImplementedError('The algorithm {} is not implemented.'.format(self.algo))
         self.match_p_encodes, self.match_q_encodes = match_layer.match(self.sep_p_encodes, self.sep_q_encodes,
-                                                    self.p_length, self.q_length)                   # 连接了四个向量，最后得到b*len(pa)*1200
+                                                    self.p, self.q)                   # 连接了四个向量，最后得到b*len(pa)*1200
         if self.use_dropout:
             self.match_p_encodes = tf.nn.dropout(self.match_p_encodes, self.dropout_keep_prob)
             self.match_q_encodes = tf.nn.dropout(self.match_q_encodes, self.dropout_keep_prob)

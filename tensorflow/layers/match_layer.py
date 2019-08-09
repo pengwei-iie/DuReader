@@ -94,7 +94,7 @@ class AttentionFlowMatchLayer(object):
     #     outputs = gate*new_sens_tanh + (1-gate)*old
     #     return outputs
 
-    def match(self, passage_encodes, question_encodes, p_length, q_length):
+    def match(self, passage_encodes, question_encodes, p, q):
         """
         Match the passage_encodes with question_encodes using Attention Flow Match algorithm
         """
@@ -111,10 +111,13 @@ class AttentionFlowMatchLayer(object):
             sim_matrix = tf.matmul(tf.nn.relu(tfu.dense(passage_encodes, self.hidden_size, use_bias=False, scope="score_b_orderanddiag")),
                               tf.nn.relu(tfu.dense(question_encodes, self.hidden_size, use_bias=False, scope="score_b_orderanddiag", reuse=True)), transpose_b=True)
             # 开始归一化,文档中的词和问题中的所有词
-            sim_matrix_i = tf.nn.softmax(sim_matrix, dim=-1)
+            # attention mask
+            sim_matrix_i = tfu.mask_softmax(sim_matrix, q['mask'], -1)
+            # sim_matrix_i = tf.nn.softmax(sim_matrix, dim=-1)
             context2question_attn = tf.matmul(sim_matrix_i, question_encodes)
             # 问题中的词和文档中的所有词
-            sim_matrix_j = tf.nn.softmax(sim_matrix, dim=1)
+            # sim_matrix_j = tf.nn.softmax(sim_matrix, dim=1)
+            sim_matrix_j = tfu.mask_softmax(sim_matrix, p['mask'], 1)
             question2context_attn = tf.matmul(sim_matrix_j, passage_encodes, transpose_a=True)
             passage = tfu.fusion(passage_encodes, context2question_attn, self.hidden_size, name="pass_fusion")
             question = tfu.fusion(question_encodes, question2context_attn, self.hidden_size, name="ques_fusion")
