@@ -102,10 +102,15 @@ class RCModel(object):
         """
         Placeholders
         """
-        self.p = tf.placeholder(tf.int32, [None, None])
-        self.q = tf.placeholder(tf.int32, [None, None])
-        self.p_length = tf.placeholder(tf.int32, [None])
-        self.q_length = tf.placeholder(tf.int32, [None])
+        def _mapper(pl):
+            mask = tf.cast(pl, tf.bool)
+            length = tf.reduce_sum(tf.to_int32(mask), -1)
+            return {'data': pl, 'mask': mask, 'length': length}
+
+        self.p = _mapper(tf.placeholder(tf.int32, [None, None]))
+        self.q = _mapper(tf.placeholder(tf.int32, [None, None]))
+        self.p_length = self.p['length']
+        self.q_length = self.q['length']
         self.start_label = tf.placeholder(tf.int32, [None])
         self.end_label = tf.placeholder(tf.int32, [None])
         self.dropout_keep_prob = tf.placeholder(tf.float32)
@@ -121,8 +126,8 @@ class RCModel(object):
                 initializer=tf.constant_initializer(self.vocab.embeddings),
                 trainable=True
             )
-            self.p_emb = tf.nn.embedding_lookup(self.word_embeddings, self.p)
-            self.q_emb = tf.nn.embedding_lookup(self.word_embeddings, self.q)
+            self.p_emb = tf.nn.embedding_lookup(self.word_embeddings, self.p['data'])
+            self.q_emb = tf.nn.embedding_lookup(self.word_embeddings, self.q['data'])
 
     # def fusion(self, old, new, name):
     #     # 连接特征
@@ -284,8 +289,8 @@ class RCModel(object):
         total_num, total_loss = 0, 0
         log_every_n_batch, n_batch_loss = 50, 0
         for bitx, batch in enumerate(train_batches, 1):
-            feed_dict = {self.p: batch['passage_token_ids'],
-                         self.q: batch['question_token_ids'],
+            feed_dict = {self.p['data']: batch['passage_token_ids'],
+                         self.q['data']: batch['question_token_ids'],
                          self.p_length: batch['passage_length'],
                          self.q_length: batch['question_length'],
                          self.start_label: batch['start_id'],
@@ -351,8 +356,8 @@ class RCModel(object):
         pred_answers, ref_answers = [], []
         total_loss, total_num = 0, 0
         for b_itx, batch in enumerate(eval_batches):
-            feed_dict = {self.p: batch['passage_token_ids'],
-                         self.q: batch['question_token_ids'],
+            feed_dict = {self.p['data']: batch['passage_token_ids'],
+                         self.q['data']: batch['question_token_ids'],
                          self.p_length: batch['passage_length'],
                          self.q_length: batch['question_length'],
                          self.start_label: batch['start_id'],

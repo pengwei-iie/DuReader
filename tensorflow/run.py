@@ -43,7 +43,7 @@ def parse_args():
                         help='evaluate the model on dev set')
     parser.add_argument('--predict', action='store_true',
                         help='predict the answers for test set with trained model')
-    parser.add_argument('--gpu', type=str, default='0',
+    parser.add_argument('--gpu', type=str, default='3',
                         help='specify gpu device')
 
     train_settings = parser.add_argument_group('train settings')  # 定义一个组
@@ -80,10 +80,10 @@ def parse_args():
 
     path_settings = parser.add_argument_group('path settings')
     path_settings.add_argument('--train_files', nargs='+',
-                               default=['../data/demo/trainset/search.train.json'],
+                               default=['../data/demo/trainset/search.prosmall.json'],
                                help='list of files that contain the preprocessed train data')
     path_settings.add_argument('--dev_files', nargs='+',
-                               default=['../data/demo/devset/search.dev.json'],
+                               default=['../data/demo/devset/search.prosmall.json'],
                                help='list of files that contain the preprocessed dev data')
     path_settings.add_argument('--test_files', nargs='+',
                                default=['../data/demo/testset/search.test.json'],
