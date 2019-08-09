@@ -196,7 +196,9 @@ class RCModel(object):
             tmp = tf.matmul(tmp, W_bi)
             tmp = tf.reshape(tmp, [batch_add5, -1, self.hidden_size*2])
             # 以上就是通过reshape的方式进行双线性变化
-            L = tf.nn.softmax(tf.matmul(tmp, self.fuse_p_encodes, transpose_b=True))
+            before_softmax = tf.matmul(tmp, self.fuse_p_encodes, transpose_b=True)      # b, n, n
+            L = tfu.mask_softmax(before_softmax, self.p['mask'])
+            # L = tf.nn.softmax(tf.matmul(tmp, self.fuse_p_encodes, transpose_b=True))
             self.binear_passage = tf.matmul(L, self.fuse_p_encodes)
             self.binear_passage = tfu.fusion(self.fuse_p_encodes, self.binear_passage, self.hidden_size, name="binear")
 
@@ -212,7 +214,7 @@ class RCModel(object):
                                    initializer=tf.contrib.layers.xavier_initializer())
             tmp = tf.reshape(self.fuse_q_encodes, [-1, self.hidden_size * 2])
             tmp = tf.matmul(tmp, W_q)
-            tmp = tf.reshape(tmp, [batch_add5, -1, self.hidden_size * 2])
+            tmp = tf.reshape(tmp, [batch_add5, -1, self.hidden_size * 2])   # b, q-len, hidden
             alpha = tf.nn.softmax(tmp)      # b, n_q, 300
             self.self_ques = alpha*self.fuse_q_encodes
 
