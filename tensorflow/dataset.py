@@ -74,6 +74,7 @@ class BRCDataset(object):
                 sample['question_tokens'] = sample['segmented_question']
 
                 sample['passages'] = []
+                sample['pos'] = []
                 for d_idx, doc in enumerate(sample['documents']):   # 对每一篇文档处理
                     if train:                                       # 把被选择的和未被选择的最相关的段落都加到sample['passages']
                         most_related_para = doc['most_related_para']
@@ -97,6 +98,9 @@ class BRCDataset(object):
                         for para_info in para_infos[:1]:    # 只取第一个最高的
                             fake_passage_tokens += para_info[0]
                         sample['passages'].append({'passage_tokens': fake_passage_tokens})  # 把最高的那个段落加到sample['passages']
+
+                        # add positional info
+                        sample['pos']
                 data_set.append(sample)
         return data_set
 
@@ -113,8 +117,10 @@ class BRCDataset(object):
         batch_data = {'raw_data': [data[i] for i in indices],
                       'question_token_ids': [],
                       'question_length': [],
+                      'question_pos': [],
                       'passage_token_ids': [],
                       'passage_length': [],
+                      'passage_pos': [],
                       'start_id': [],
                       'end_id': []}
         max_passage_num = max([len(sample['passages']) for sample in batch_data['raw_data']])
@@ -124,9 +130,14 @@ class BRCDataset(object):
                 if pidx < len(sample['passages']):
                     batch_data['question_token_ids'].append(sample['question_token_ids'])
                     batch_data['question_length'].append(len(sample['question_token_ids']))
+                    batch_data['question_pos'].append(
+                        self.add_position(sample['question_token_ids'], if_passage=False))
                     passage_token_ids = sample['passages'][pidx]['passage_token_ids']
                     batch_data['passage_token_ids'].append(passage_token_ids)
                     batch_data['passage_length'].append(min(len(passage_token_ids), self.max_p_len))
+                    batch_data['passage_pos'].append(
+                        self.add_position(passage_token_ids, if_passage=True))
+
                 else:
                     batch_data['question_token_ids'].append([])
                     batch_data['question_length'].append(0)
@@ -181,6 +192,17 @@ class BRCDataset(object):
                 for passage in sample['passages']:
                     for token in passage['passage_tokens']:
                         yield token
+
+    def add_position(self, lens, if_passage):
+        if if_passage:
+            step = self.max_p_len / len(lens)
+        else:
+            step = self.max_q_len / len(lens)
+        if step > 1:
+            ids = [int((ix + 1) * step - 1) for ix in range(len(lens))]
+        else:
+            ids = [int(ix * step) for ix in range(len(lens))]
+        return ids
 
     def convert_to_ids(self, vocab):
         """

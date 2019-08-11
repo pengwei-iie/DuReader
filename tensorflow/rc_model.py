@@ -34,6 +34,7 @@ from layers.match_layer import MatchLSTMLayer
 from layers.match_layer import AttentionFlowMatchLayer
 from layers.pointer_net import PointerNetDecoder
 import tfu
+import modules
 
 class RCModel(object):
     """
@@ -48,10 +49,16 @@ class RCModel(object):
         # basic config
         self.algo = args.algo
         self.hidden_size = args.hidden_size
+        self.fully_hidden = args.fully_hidden
+        self.layer = args.layer
+        self.head = args.head
+        self.batch_size = args.batch_size
         self.optim_type = args.optim
         self.learning_rate = args.learning_rate
         self.weight_decay = args.weight_decay
         self.use_dropout = args.dropout_keep_prob < 1
+        self.dropout_keep_prob = args.dropout_keep_prob
+        self.is_train = tf.cast(True, tf.bool)
 
         # length limit
         self.max_p_num = args.max_p_num
@@ -90,7 +97,7 @@ class RCModel(object):
         self._encode()
         self._match()
         self._fuse()
-        self._self_attention()  # add self_attention
+        # self._self_attention()  # add self_attention
         self._decode()
         self._compute_loss()
         self._create_train_op()
@@ -111,9 +118,11 @@ class RCModel(object):
         self.q = _mapper(tf.placeholder(tf.int32, [None, None]))
         self.p_length = self.p['length']
         self.q_length = self.q['length']
+        self.p_pos = tf.placeholder(tf.int32, [None, None])
+        self.q_pos = tf.placeholder(tf.int32, [None, None])
         self.start_label = tf.placeholder(tf.int32, [None])
         self.end_label = tf.placeholder(tf.int32, [None])
-        self.dropout_keep_prob = tf.placeholder(tf.float32)
+        # self.dropout_keep_prob = tf.placeholder(tf.float32)
 
     def _embed(self):
         """
@@ -129,6 +138,13 @@ class RCModel(object):
             self.p_emb = tf.nn.embedding_lookup(self.word_embeddings, self.p['data'])
             self.q_emb = tf.nn.embedding_lookup(self.word_embeddings, self.q['data'])
 
+    # def _dialogue_pos_embedding(self, ids, emb_dim, scope='dialogue_pos_emb', reuse=False):
+    #     with tf.variable_scope(scope, reuse=reuse):
+    #         pos_emb = tf.get_variable('dia_pos_emb', dtype=tf.float32,
+    #                                   shape=(self._config['dia_pos_num'], emb_dim))
+    #         res = tf.nn.embedding_lookup(pos_emb, ids)
+    #         return res
+
     # def fusion(self, old, new, name):
     #     # 连接特征
     #     tmp = tf.concat([old, new, old*new, old-new], axis=2)   # b, len, hidden*4
@@ -139,17 +155,93 @@ class RCModel(object):
     #     outputs = gate*new_sens_tanh + (1-gate)*old
     #     return outputs
 
+    def _single_encoder(self, reuse=False):
+        with tf.variable_scope('paragraph_encoder', reuse=reuse):
+            hidden, layers, heads, ffd_hidden = self.hidden_size, self.layer, self.head, self.fully_hidden
+            sent = tfu.add_timing_signal(self.p_emb)
+            # sent = tfu.dropout(sent, self._kprob, self._is_train)
+            trans = tfu.TransformerEncoder(hidden=hidden, layers=layers, heads=heads, ffd_hidden=ffd_hidden,
+                                           keep_prob=self.dropout_keep_prob, is_train=self.is_train, scope='paragraph_trans')
+            sent_emb = trans(sent, self.p['mask'])      # batch5, num, 256
+            return sent_emb
+
     def _encode(self):
         """
         Employs two Bi-LSTMs to encode passage and question separately
         """
-        with tf.variable_scope('passage_encoding'):
-            self.sep_p_encodes, _ = rnn('bi-lstm', self.p_emb, self.p_length, self.hidden_size) # 得到rnn的输出和状态
+        with tf.variable_scope("paragraph_encoder"):
+            # word_num = tf.shape(self.p_emb)[1]
+            # emb_h = self.p_emb.shape.as_list()[-1]
+            # sent = tf.reshape(emb, [self._batch * sent_num, word_num, emb_h])
+            # sent_mask = tf.reshape(mask, [self._batch * sent_num, word_num])
+            self.para_emb = self._single_encoder()  # 得到了所有段落的表示     batch5, num, hidden
+            self.sep_p_encodes, _ = rnn('bi-lstm', self.para_emb, self.p_length, self.hidden_size)  # 得到rnn的输出和状态
+            # hidden = para_emb.shape.as_list()[-1]
+            # # 下面得到段落级别的表示，batch5， hidden
+            # para_level_emb, prob = tfu.summ(para_emb, hidden, self.p['mask'],
+            #                                 self.dropout_keep_prob, self.is_train, 'summ2sent', True)
+
+            # 得到每一个段落的表示
+            # para_level_emb = tf.reshape(para_level_emb,
+            #                             [self.batch_size, -1, para_level_emb.shape.as_list()[-1]])  # 经过了参数的attention
+
+            # 对编码的段落中每个词的attention，用于后面PGnet
+            # prob = tf.reshape(prob, [self.batch_size, -1, word_num])
+            # # 对每一个句子在词级别做完attention之后，reshape，然后在开始分离第一句话，即ot
+            # # order, _ = tf.split(sent_level_emb, [1, sent_num - 1], axis=1)
+            # # _, prob = tf.split(prob, [1, sent_num - 1], axis=1)
+            #
+            # # 避免oom，选择top-10的word，主要是计算后面的层级pointer
+            # prob, index = tf.nn.top_k(prob, self._config.get('top_word', 10))
+            # select_ids = tfu.batch_gather(ids, index)
+            # sent_emb = tf.reshape(para_emb, [self._batch, sent_num, word_num, hidden])
+            # # _, sent_emb = tf.split(sent_emb, [1, sent_num - 1], axis=1)
+            # select_emb = tfu.batch_gather(sent_emb, index)
+
+            # 这里可以开始加门了sent_level_emb（b, diags, hidden_size）
+            # Ws = tf.Variable(tf.random_normal(shape=[hidden, 1], mean=0, stddev=0.01), name='v1')
+            # score = tf.sigmoid(tf.matmul(sent_level_emb, Ws))
+            # score = tf.sigmoid(tfu.dense(sent_level_emb, 1))
+            # sent_level_emb = score * sent_level_emb
+
+            # # 2.用工单标题做sigomid，order先要扩围，先在最后一个维度上连接，然后过一个dense，再加一个激活
+            # order = tf.tile(order, [1, sent_num, 1])
+            # sent_level_emb = tf.concat(values=[sent_level_emb, order], axis=2)
+            # score = tf.sigmoid((tf.tanh(tfu.dense(sent_level_emb, 1))))
+            # sent_level_emb = score * sent_level_emb
+
+            # 使用fusion
+            # score = tf.matmul(a=tf.nn.relu(tfu.dense(sent_level_emb, 1, use_bias=False, scope="score_b_orderanddiag")),
+            #                   b=tf.nn.relu(tfu.dense(order, 1, use_bias=False, scope="score_b_orderanddiag", reuse=True)),
+            #                   transpose_b=True)
+            # # 计算attention，得到融合标题的句子表达
+            # order_aware_sents = sent_level_emb * score
+            # # 连接向量
+            # new_sens = tf.concat([order_aware_sents, sent_level_emb, order_aware_sents * sent_level_emb], axis=2)
+            # # 激活
+            # new_sens_tanh = tf.nn.tanh(tfu.dense(new_sens, hidden, scope="new_sens_dense"))
+            # # 利用这个new_sens_dense计算sigmoid
+            # gate = tf.nn.sigmoid(tfu.dense(new_sens, 1, scope="gate"))
+            # # 得到最后的表示
+            # sent_level_emb = gate * new_sens_tanh + (1 - gate) * sent_level_emb
+            #
+            # sent_level_emb = self._pos_embedding_encoder(
+            #     self._config['dialogue'], sent_level_emb, dia_mask, self._dialogue['pos'], 'dialogue', reuse)
+
+            # return sent_level_emb, prob, select_ids, select_emb
+        # with tf.variable_scope('passage_encoding'):
+        #     self.sep_p_encodes, _ = rnn('bi-lstm', self.p_emb, self.p_length, self.hidden_size) # 得到rnn的输出和状态
+
         with tf.variable_scope('question_encoding'):
             self.sep_q_encodes, _ = rnn('bi-lstm', self.q_emb, self.q_length, self.hidden_size)
         if self.use_dropout:
             self.sep_p_encodes = tf.nn.dropout(self.sep_p_encodes, self.dropout_keep_prob)
+            # self.sep_p_encodes += modules.positional_encoding(self.p['data'], self.hidden_size,
+            #                                                   zero_pad=False, scale=False, scope='encoder_position')
+
             self.sep_q_encodes = tf.nn.dropout(self.sep_q_encodes, self.dropout_keep_prob)
+
+        # p_pos_emb = self._dialogue_pos_embedding(self.p_pos, emb.shape.as_list()[-1])
 
     def _match(self):
         """
@@ -228,14 +320,14 @@ class RCModel(object):
         with tf.variable_scope('same_question_concat'):
             batch_size = tf.shape(self.start_label)[0]
             concat_passage_encodes = tf.reshape(
-                self.fina_passage,
+                self.fuse_p_encodes,
                 [batch_size, -1, 2 * self.hidden_size]
             )       # fina_passage: b*5, len_p, hidden --> b, 5*len_p, hidden
 
             # b, 5, len_q, hidden       [0:, 0, 0:, 0:] 表示只用第一个问题，因为5个问题都是一样的
             no_dup_question_encodes = tf.reshape(
-                self.self_ques,
-                [batch_size, -1, tf.shape(self.self_ques)[1], 2 * self.hidden_size]
+                self.fuse_q_encodes,
+                [batch_size, -1, tf.shape(self.fuse_q_encodes)[1], 2 * self.hidden_size]
             )[0:, 0, 0:, 0:]
 
         decoder = PointerNetDecoder(self.hidden_size)
@@ -296,8 +388,7 @@ class RCModel(object):
                          self.p_length: batch['passage_length'],
                          self.q_length: batch['question_length'],
                          self.start_label: batch['start_id'],
-                         self.end_label: batch['end_id'],
-                         self.dropout_keep_prob: dropout_keep_prob}
+                         self.end_label: batch['end_id']}
             _, loss = self.sess.run([self.train_op, self.loss], feed_dict)
             total_loss += loss * len(batch['raw_data'])
             total_num += len(batch['raw_data'])
@@ -363,8 +454,7 @@ class RCModel(object):
                          self.p_length: batch['passage_length'],
                          self.q_length: batch['question_length'],
                          self.start_label: batch['start_id'],
-                         self.end_label: batch['end_id'],
-                         self.dropout_keep_prob: 1.0}
+                         self.end_label: batch['end_id']}
             start_probs, end_probs, loss = self.sess.run([self.start_probs,
                                                           self.end_probs, self.loss], feed_dict)
 

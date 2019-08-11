@@ -29,6 +29,9 @@ from dataset import BRCDataset
 from vocab import Vocab
 from rc_model import RCModel
 import tensorflow as tf
+import numpy as np
+import random
+
 
 def parse_args():
     """
@@ -61,14 +64,22 @@ def parse_args():
                                 help='train epochs')
 
     model_settings = parser.add_argument_group('model settings')
-    model_settings.add_argument('--algo', choices=['BIDAF', 'MLSTM'], default='BIDAF',
+    model_settings.add_argument('--algo', choices=['BIDAF', 'MLSTM', 'Transformer'], default='BIDAF',
                                 help='choose the algorithm to use')
-    model_settings.add_argument('--rand_seed', type=int, default=1,
+    model_settings.add_argument('--rand_seed', type=int, default=123,
                                 help='set the random seed')
     model_settings.add_argument('--embed_size', type=int, default=300,
                                 help='size of the embeddings')
-    model_settings.add_argument('--hidden_size', type=int, default=150,
-                                help='size of LSTM hidden units')
+    # model_settings.add_argument('--hidden_size', type=int, default=150,
+    #                             help='size of LSTM hidden units')
+    model_settings.add_argument('--hidden_size', type=int, default=256,
+                                help='size of Transformer hidden units')
+    model_settings.add_argument('--fully_hidden', type=int, default=1024,
+                                help='size of fully connect layer hidden units')
+    model_settings.add_argument('--layer', type=int, default=3,
+                                help='Transformer layer')
+    model_settings.add_argument('--head', type=int, default=4,
+                                help='Transformer head')
     model_settings.add_argument('--max_p_num', type=int, default=5,
                                 help='max passage num in one sample')
     model_settings.add_argument('--max_p_len', type=int, default=500,
@@ -143,6 +154,10 @@ def train(args):
     """
     trains the reading comprehension model
     """
+    random.seed(args.rand_seed)
+    np.random.seed(args.rand_seed)
+    tf.set_random_seed(args.rand_seed)
+
     logger = logging.getLogger("brc")
     logger.info('Load data_set and vocab...')
     with open(os.path.join(args.vocab_dir, 'vocab.data'), 'rb') as fin:
