@@ -167,7 +167,7 @@ class RCModel(object):
 
     def _encode(self):
         """
-        Employs two Bi-LSTMs to encode passage and question separately
+        Employs two Bi-LSTMs to encode passage and question separately.
         """
         with tf.variable_scope("paragraph_encoder"):
             # word_num = tf.shape(self.p_emb)[1]
