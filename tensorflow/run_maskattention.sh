@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=1 python run.py --train --algo BIDAF --epochs 5 --batch_size 32 --train_files ../data/trainset/search.train.json ../data/trainset/zhidao.train.json --dev_files ../data/devset/search.dev.json ../data/devset/zhidao.dev.json --model_dir ../model/mask_attention_true --result_dir ../data/results
