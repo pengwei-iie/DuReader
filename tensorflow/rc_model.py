@@ -371,7 +371,11 @@ class RCModel(object):
             self.optimizer = tf.train.GradientDescentOptimizer(self.learning_rate)
         else:
             raise NotImplementedError('Unsupported optimizer: {}'.format(self.optim_type))
+        temp = set(tf.global_variables())
         self.train_op = self.optimizer.minimize(self.loss)
+        self.sess.run(tf.initialize_variables(set(tf.global_variables()) - temp))
+
+        # self.train_op = self.optimizer.minimize(self.loss)
 
     def _train_epoch(self, train_batches, dropout_keep_prob):
         """
@@ -435,6 +439,7 @@ class RCModel(object):
                     self.logger.warning('No dev set is loaded for evaluation in the dataset!')
             else:
                 self.save(save_dir, save_prefix + '_' + str(epoch))
+        tf.reset_default_graph()
 
     def evaluate(self, eval_batches, result_dir=None, result_prefix=None, save_full_info=False):
         """
@@ -502,6 +507,7 @@ class RCModel(object):
             bleu_rouge = compute_bleu_rouge(pred_dict, ref_dict)
         else:
             bleu_rouge = None
+        tf.reset_default_graph()
         return ave_loss, bleu_rouge
 
     def find_best_answer(self, sample, start_prob, end_prob, padded_p_len):
@@ -562,5 +568,9 @@ class RCModel(object):
         """
         Restores the model into model_dir from model_prefix as the model indicator
         """
+        # temp = set(tf.global_variables())
+        # train_op = tf.train.AdamOptimizer(self.learning_rate)
+        # self.sess.run(tf.initialize_variables(set(tf.global_variables()) - temp))
+
         self.saver.restore(self.sess, os.path.join(model_dir, model_prefix))
         self.logger.info('Model restored from {}, with prefix {}'.format(model_dir, model_prefix))
