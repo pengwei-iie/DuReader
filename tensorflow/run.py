@@ -37,15 +37,13 @@ def parse_args():
     parser = argparse.ArgumentParser('Reading Comprehension on BaiduRC dataset')
     parser.add_argument('--prepare', action='store_true',
                         help='create the directories, prepare the vocabulary and embeddings')
-    parser.add_argument('--use_pretrained', action='store_true',
-                        help='use pretrained vocab')
     parser.add_argument('--train', action='store_true',
                         help='train the model')
     parser.add_argument('--evaluate', action='store_true',
                         help='evaluate the model on dev set')
     parser.add_argument('--predict', action='store_true',
                         help='predict the answers for test set with trained model')
-    parser.add_argument('--gpu', type=str, default='1',
+    parser.add_argument('--gpu', type=str, default='3',
                         help='specify gpu device')
 
     train_settings = parser.add_argument_group('train settings')  # 定义一个组
@@ -57,7 +55,7 @@ def parse_args():
                                 help='weight decay')
     train_settings.add_argument('--dropout_keep_prob', type=float, default=0.4,
                                 help='dropout keep rate')
-    train_settings.add_argument('--batch_size', type=int, default=8,
+    train_settings.add_argument('--batch_size', type=int, default=32,
                                 help='train batch size')
     train_settings.add_argument('--epochs', type=int, default=10,
                                 help='train epochs')
@@ -94,8 +92,6 @@ def parse_args():
                                help='the dir with preprocessed baidu reading comprehension data')
     path_settings.add_argument('--vocab_dir', default='../data/vocab/',
                                help='the dir to save vocabulary')
-    path_settings.add_argument('--pretrained_dir', default='./wordvec/glove.6B.300d.txt',
-                               help='the dir to load pretrained vocab')
     path_settings.add_argument('--model_dir', default='../data/models_randseed1/',
                                help='the dir to store models')
     path_settings.add_argument('--result_dir', default='../data/results/',
@@ -134,10 +130,7 @@ def prepare(args):
                                                                             vocab.size()))
 
     logger.info('Assigning embeddings...')
-    if args.use_pretrained:
-        vocab.load_pretrained_embeddings(args.pretrained_dir)
-    else:
-        vocab.randomly_init_embeddings(args.embed_size)
+    vocab.randomly_init_embeddings(args.embed_size)
 
     logger.info('Saving vocab...')
     with open(os.path.join(args.vocab_dir, 'vocab.data'), 'wb') as fout:
@@ -160,7 +153,11 @@ def train(args):
     brc_data.convert_to_ids(vocab)
     logger.info('Initialize the model...')
     rc_model = RCModel(vocab, args)
-    rc_model.restore(model_dir=args.model_dir, model_prefix=args.algo)
+
+    # 判断是否存在模型
+    if os.path.exists(os.path.join(args.model_dir, 'checkpoint')):
+        rc_model.restore(model_dir=args.model_dir, model_prefix=args.algo, rand_seed=args.rand_seed)
+
     logger.info('Training the model...')
     rc_model.train(brc_data, args.epochs, args.batch_size, save_dir=args.model_dir,
                    save_prefix=args.algo, rand_seed=args.rand_seed,
@@ -182,7 +179,7 @@ def evaluate(args):
     brc_data.convert_to_ids(vocab)
     logger.info('Restoring the model...')
     rc_model = RCModel(vocab, args)
-    rc_model.restore(model_dir=args.model_dir, model_prefix=args.algo)
+    rc_model.restore(model_dir=args.model_dir, model_prefix=args.algo, rand_seed=args.rand_seed)
     logger.info('Evaluating the model on dev set...')
     dev_batches = brc_data.gen_mini_batches('dev', args.batch_size,
                                             pad_id=vocab.get_id(vocab.pad_token), shuffle=False)
@@ -208,7 +205,7 @@ def predict(args):
     brc_data.convert_to_ids(vocab)
     logger.info('Restoring the model...')
     rc_model = RCModel(vocab, args)
-    rc_model.restore(model_dir=args.model_dir, model_prefix=args.algo)
+    rc_model.restore(model_dir=args.model_dir, model_prefix=args.algo, rand_seed=args.rand_seed)
     logger.info('Predicting answers for test set...')
     test_batches = brc_data.gen_mini_batches('test', args.batch_size,
                                              pad_id=vocab.get_id(vocab.pad_token), shuffle=False)

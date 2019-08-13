@@ -33,6 +33,7 @@ from layers.basic_rnn import rnn
 from layers.match_layer import MatchLSTMLayer
 from layers.match_layer import AttentionFlowMatchLayer
 from layers.pointer_net import PointerNetDecoder
+import tfu
 
 
 class RCModel(object):
@@ -69,16 +70,17 @@ class RCModel(object):
 
         self._build_graph()
 
-        # save info
-        self.saver = tf.train.Saver()
+
 
         # initialize the model
         self.sess.run(tf.global_variables_initializer())
+
 
     def _build_graph(self):
         """
         Builds the computation graph with Tensorflow
         """
+
         start_t = time.time()
         self._setup_placeholders()
         # num_gpus = 4
@@ -86,11 +88,16 @@ class RCModel(object):
         # for i in range(num_gpus):
         #     with tf.device('/gpu:%d', i):
         self._embed()
+        # self._fusion()
         self._encode()
         self._match()
         self._fuse()
+        # self._self_attention()  # add self_attention
         self._decode()
         self._compute_loss()
+        # save info
+        self.saver = tf.train.Saver()
+
         self._create_train_op()
         self.logger.info('Time to build graph: {} s'.format(time.time() - start_t))
         param_num = sum([np.prod(self.sess.run(tf.shape(v))) for v in self.all_params])
@@ -100,10 +107,15 @@ class RCModel(object):
         """
         Placeholders
         """
-        self.p = tf.placeholder(tf.int32, [None, None])
-        self.q = tf.placeholder(tf.int32, [None, None])
-        self.p_length = tf.placeholder(tf.int32, [None])
-        self.q_length = tf.placeholder(tf.int32, [None])
+        def _mapper(pl):
+            mask = tf.cast(pl, tf.bool)
+            length = tf.reduce_sum(tf.to_int32(mask), -1)
+            return {'data': pl, 'mask': mask, 'length': length}
+
+        self.p = _mapper(tf.placeholder(tf.int32, [None, None]))
+        self.q = _mapper(tf.placeholder(tf.int32, [None, None]))
+        self.p_length = self.p['length']
+        self.q_length = self.q['length']
         self.start_label = tf.placeholder(tf.int32, [None])
         self.end_label = tf.placeholder(tf.int32, [None])
         self.dropout_keep_prob = tf.placeholder(tf.float32)
@@ -119,8 +131,18 @@ class RCModel(object):
                 initializer=tf.constant_initializer(self.vocab.embeddings),
                 trainable=True
             )
-            self.p_emb = tf.nn.embedding_lookup(self.word_embeddings, self.p)
-            self.q_emb = tf.nn.embedding_lookup(self.word_embeddings, self.q)
+            self.p_emb = tf.nn.embedding_lookup(self.word_embeddings, self.p['data'])
+            self.q_emb = tf.nn.embedding_lookup(self.word_embeddings, self.q['data'])
+
+    # def fusion(self, old, new, name):
+    #     # 连接特征
+    #     tmp = tf.concat([old, new, old*new, old-new], axis=2)   # b, len, hidden*4
+    #     # 激活
+    #     new_sens_tanh = tf.nn.tanh(tfu.dense(tmp, self.hidden_size*2, scope=name))
+    #     # gate
+    #     gate = tf.nn.sigmoid(tfu.dense(tmp, 1, scope=name+"sigmoid"))
+    #     outputs = gate*new_sens_tanh + (1-gate)*old
+    #     return outputs
 
     def _encode(self):
         """
@@ -144,22 +166,21 @@ class RCModel(object):
             match_layer = AttentionFlowMatchLayer(self.hidden_size)
         else:
             raise NotImplementedError('The algorithm {} is not implemented.'.format(self.algo))
-        # self.match_p_encodes, self.match_q_encodes = match_layer.match(self.sep_p_encodes, self.sep_q_encodes,
-        #                                             self.p_length, self.q_length)                   # 连接了四个向量，最后得到b*len(pa)*1200
         self.match_p_encodes, _ = match_layer.match(self.sep_p_encodes, self.sep_q_encodes,
-                                                                       self.p_length, self.q_length)
+                                                    self.p, self.q)                   # 连接了四个向量，最后得到b*len(pa)*1200
         if self.use_dropout:
             self.match_p_encodes = tf.nn.dropout(self.match_p_encodes, self.dropout_keep_prob)
+            # self.match_q_encodes = tf.nn.dropout(self.match_q_encodes, self.dropout_keep_prob)
 
     def _fuse(self):
         """
         Employs Bi-LSTM again to fuse the context information after match layer
         """
-        with tf.variable_scope('fusion'):
+        with tf.variable_scope('fusion_p'):
             self.fuse_p_encodes, _ = rnn('bi-lstm', self.match_p_encodes, self.p_length,
-                                         self.hidden_size, layer_num=1)                             # 经过双向RNN,变成前向+后向，150+150
-            if self.use_dropout:
-                self.fuse_p_encodes = tf.nn.dropout(self.fuse_p_encodes, self.dropout_keep_prob)
+                                         self.hidden_size, layer_num=1)  # 经过双向RNN,变成前向+后向，150+150
+        if self.use_dropout:
+            self.fuse_p_encodes = tf.nn.dropout(self.fuse_p_encodes, self.dropout_keep_prob)
 
     def _decode(self):
         """
@@ -173,11 +194,14 @@ class RCModel(object):
             concat_passage_encodes = tf.reshape(
                 self.fuse_p_encodes,
                 [batch_size, -1, 2 * self.hidden_size]
-            )
+            )       # fina_passage: b*5, len_p, hidden --> b, 5*len_p, hidden
+
+            # b, 5, len_q, hidden       [0:, 0, 0:, 0:] 表示只用第一个问题，因为5个问题都是一样的
             no_dup_question_encodes = tf.reshape(
                 self.sep_q_encodes,
                 [batch_size, -1, tf.shape(self.sep_q_encodes)[1], 2 * self.hidden_size]
             )[0:, 0, 0:, 0:]
+
         decoder = PointerNetDecoder(self.hidden_size)
         self.start_probs, self.end_probs = decoder.decode(concat_passage_encodes,
                                                           no_dup_question_encodes)
@@ -231,8 +255,8 @@ class RCModel(object):
         total_num, total_loss = 0, 0
         log_every_n_batch, n_batch_loss = 50, 0
         for bitx, batch in enumerate(train_batches, 1):
-            feed_dict = {self.p: batch['passage_token_ids'],
-                         self.q: batch['question_token_ids'],
+            feed_dict = {self.p['data']: batch['passage_token_ids'],
+                         self.q['data']: batch['question_token_ids'],
                          self.p_length: batch['passage_length'],
                          self.q_length: batch['question_length'],
                          self.start_label: batch['start_id'],
@@ -298,8 +322,8 @@ class RCModel(object):
         pred_answers, ref_answers = [], []
         total_loss, total_num = 0, 0
         for b_itx, batch in enumerate(eval_batches):
-            feed_dict = {self.p: batch['passage_token_ids'],
-                         self.q: batch['question_token_ids'],
+            feed_dict = {self.p['data']: batch['passage_token_ids'],
+                         self.q['data']: batch['question_token_ids'],
                          self.p_length: batch['passage_length'],
                          self.q_length: batch['question_length'],
                          self.start_label: batch['start_id'],
@@ -404,14 +428,13 @@ class RCModel(object):
         """
         Saves the model into model_dir with model_prefix as the model indicator
         """
-        # model_prefix = model_prefix + str(rand_seed)
-        model_prefix = model_prefix
+        model_prefix = model_prefix + str(rand_seed)
         self.saver.save(self.sess, os.path.join(model_dir, model_prefix))
         self.logger.info('Model saved in {}, with prefix {}.'.format(model_dir, model_prefix))
 
-    def restore(self, model_dir, model_prefix):
+    def restore(self, model_dir, model_prefix, rand_seed):
         """
         Restores the model into model_dir from model_prefix as the model indicator
         """
-        self.saver.restore(self.sess, os.path.join(model_dir, model_prefix))
-        self.logger.info('Model restored from {}, with prefix {}'.format(model_dir, model_prefix))
+        self.saver.restore(self.sess, os.path.join(model_dir, model_prefix + str(rand_seed)))
+        self.logger.info('Model restored from {}, with prefix {}'.format(model_dir, model_prefix + str(rand_seed)))
