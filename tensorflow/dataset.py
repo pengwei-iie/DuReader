@@ -100,7 +100,7 @@ class BRCDataset(object):
                         sample['passages'].append({'passage_tokens': fake_passage_tokens})  # 把最高的那个段落加到sample['passages']
 
                         # add positional info
-                        sample['pos']
+                        # sample['pos']
                 data_set.append(sample)
         return data_set
 
