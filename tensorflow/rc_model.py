@@ -76,8 +76,7 @@ class RCModel(object):
 
         self._build_graph()
 
-        # save info
-        self.saver = tf.train.Saver()
+
 
         # initialize the model
         self.sess.run(tf.global_variables_initializer())
@@ -100,6 +99,8 @@ class RCModel(object):
         # self._self_attention()  # add self_attention
         self._decode()
         self._compute_loss()
+        # save info
+        self.saver = tf.train.Saver()
         self._create_train_op()
         self.logger.info('Time to build graph: {} s'.format(time.time() - start_t))
         param_num = sum([np.prod(self.sess.run(tf.shape(v))) for v in self.all_params])
@@ -564,7 +565,7 @@ class RCModel(object):
         self.saver.save(self.sess, os.path.join(model_dir, model_prefix))
         self.logger.info('Model saved in {}, with prefix {}.'.format(model_dir, model_prefix))
 
-    def restore(self, model_dir, model_prefix):
+    def restore(self, model_dir, model_prefix, rand_seed):
         """
         Restores the model into model_dir from model_prefix as the model indicator
         """
@@ -572,5 +573,5 @@ class RCModel(object):
         # train_op = tf.train.AdamOptimizer(self.learning_rate)
         # self.sess.run(tf.initialize_variables(set(tf.global_variables()) - temp))
 
-        self.saver.restore(self.sess, os.path.join(model_dir, model_prefix))
-        self.logger.info('Model restored from {}, with prefix {}'.format(model_dir, model_prefix))
+        self.saver.restore(self.sess, os.path.join(model_dir, model_prefix+str(rand_seed)))
+        self.logger.info('Model restored from {}, with prefix {}'.format(model_dir, model_prefix+str(rand_seed)))
