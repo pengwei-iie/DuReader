@@ -35,6 +35,7 @@ from layers.match_layer import AttentionFlowMatchLayer
 from layers.pointer_net import PointerNetDecoder
 import tfu
 
+
 class RCModel(object):
     """
     Implements the main reading comprehension model.
@@ -69,16 +70,17 @@ class RCModel(object):
 
         self._build_graph()
 
-        # save info
-        self.saver = tf.train.Saver()
+
 
         # initialize the model
         self.sess.run(tf.global_variables_initializer())
+
 
     def _build_graph(self):
         """
         Builds the computation graph with Tensorflow
         """
+
         start_t = time.time()
         self._setup_placeholders()
         # num_gpus = 4
@@ -93,6 +95,9 @@ class RCModel(object):
         self._self_attention()  # add self_attention
         self._decode()
         self._compute_loss()
+        # save info
+        self.saver = tf.train.Saver()
+
         self._create_train_op()
         self.logger.info('Time to build graph: {} s'.format(time.time() - start_t))
         param_num = sum([np.prod(self.sess.run(tf.shape(v))) for v in self.all_params])
@@ -188,6 +193,7 @@ class RCModel(object):
             batch_add5 = tf.shape(self.fuse_p_encodes)[0]
 
             # use xavier initialization
+
             W_bi = tf.get_variable("W_bi", [self.hidden_size * 2, self.hidden_size * 2],
                                    initializer=tf.contrib.layers.xavier_initializer())
             # W_bi = tf.get_variable("W_bi", [self.hidden_size * 2, self.hidden_size * 2],
@@ -205,18 +211,18 @@ class RCModel(object):
             # 将最后一维变成self.hidden_size
             # self.binear_passage = tfu.dense(self.binear_passage, 1, "to_hidden_size")
             # 需要再经过一个双向LISTM
-            with tf.variable_scope('self_attention'):
-                self.fina_passage, _ = rnn('bi-lstm', self.binear_passage, self.p_length,
-                                             self.hidden_size, layer_num=1)  # 经过双向RNN,变成前向+后向，150+150
+        with tf.variable_scope('self_attention'):
+            self.fina_passage, _ = rnn('bi-lstm', self.binear_passage, self.p_length,
+                                         self.hidden_size, layer_num=1)  # 经过双向RNN,变成前向+后向，150+150
 
-            # 对问题操作,自对其，后续
-            W_q = tf.get_variable("W_q", [self.hidden_size * 2, self.hidden_size * 2],
-                                   initializer=tf.contrib.layers.xavier_initializer())
-            tmp = tf.reshape(self.fuse_q_encodes, [-1, self.hidden_size * 2])
-            tmp = tf.matmul(tmp, W_q)
-            tmp = tf.reshape(tmp, [batch_add5, -1, self.hidden_size * 2])   # b, q-len, hidden
-            alpha = tf.nn.softmax(tmp)      # b, n_q, 300
-            self.self_ques = alpha*self.fuse_q_encodes
+        # 对问题操作,自对其，后续
+        W_q = tf.get_variable("W_q", [self.hidden_size * 2, self.hidden_size * 2],
+                               initializer=tf.contrib.layers.xavier_initializer())
+        tmp = tf.reshape(self.fuse_q_encodes, [-1, self.hidden_size * 2])
+        tmp = tf.matmul(tmp, W_q)
+        tmp = tf.reshape(tmp, [batch_add5, -1, self.hidden_size * 2])   # b, q-len, hidden
+        alpha = tf.nn.softmax(tmp)      # b, n_q, 300
+        self.self_ques = alpha*self.fuse_q_encodes
 
     def _decode(self):
         """
@@ -468,9 +474,9 @@ class RCModel(object):
         self.saver.save(self.sess, os.path.join(model_dir, model_prefix))
         self.logger.info('Model saved in {}, with prefix {}.'.format(model_dir, model_prefix))
 
-    def restore(self, model_dir, model_prefix):
+    def restore(self, model_dir, model_prefix, rand_seed):
         """
         Restores the model into model_dir from model_prefix as the model indicator
         """
-        self.saver.restore(self.sess, os.path.join(model_dir, model_prefix))
-        self.logger.info('Model restored from {}, with prefix {}'.format(model_dir, model_prefix))
+        self.saver.restore(self.sess, os.path.join(model_dir, model_prefix + str(rand_seed)))
+        self.logger.info('Model restored from {}, with prefix {}'.format(model_dir, model_prefix + str(rand_seed)))
