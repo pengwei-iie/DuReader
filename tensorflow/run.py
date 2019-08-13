@@ -29,6 +29,9 @@ from dataset import BRCDataset
 from vocab import Vocab
 from rc_model import RCModel
 import tensorflow as tf
+import random
+import numpy as np
+
 
 def parse_args():
     """
@@ -63,7 +66,7 @@ def parse_args():
     model_settings = parser.add_argument_group('model settings')
     model_settings.add_argument('--algo', choices=['BIDAF', 'MLSTM'], default='BIDAF',
                                 help='choose the algorithm to use')
-    model_settings.add_argument('--rand_seed', type=int, default=1,
+    model_settings.add_argument('--rand_seed', type=int, default=12,
                                 help='set the random seed')
     model_settings.add_argument('--embed_size', type=int, default=300,
                                 help='size of the embeddings')
@@ -143,6 +146,10 @@ def train(args):
     """
     trains the reading comprehension model
     """
+    random.seed(args.rand_seed)
+    np.random.seed(args.rand_seed)
+    tf.set_random_seed(args.rand_seed)
+    
     logger = logging.getLogger("brc")
     logger.info('Load data_set and vocab...')
     with open(os.path.join(args.vocab_dir, 'vocab.data'), 'rb') as fin:
