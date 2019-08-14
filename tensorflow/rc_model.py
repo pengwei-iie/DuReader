@@ -41,7 +41,7 @@ class RCModel(object):
     Implements the main reading comprehension model.
     """
 
-    def __init__(self, vocab, args):
+    def __init__(self, vocab, vocab_pos, args):
 
         # logging
         self.logger = logging.getLogger("brc")
@@ -68,6 +68,7 @@ class RCModel(object):
 
         # the vocab
         self.vocab = vocab
+        self.vocab_pos = vocab_pos
 
         # session info
         sess_config = tf.ConfigProto()
@@ -92,6 +93,7 @@ class RCModel(object):
         # for i in range(num_gpus):
         #     with tf.device('/gpu:%d', i):
         self._embed()
+        self._dialogue_pos_embedding()
         # self._fusion()
         self._encode()
         self._match()
@@ -117,6 +119,8 @@ class RCModel(object):
 
         self.p = _mapper(tf.placeholder(tf.int32, [None, None]))
         self.q = _mapper(tf.placeholder(tf.int32, [None, None]))
+        self.p_pos = tf.placeholder(tf.int32, [None, None])
+        self.q_pos = tf.placeholder(tf.int32, [None, None])
         self.p_length = self.p['length']
         self.q_length = self.q['length']
         self.p_pos = tf.placeholder(tf.int32, [None, None])
@@ -139,12 +143,12 @@ class RCModel(object):
             self.p_emb = tf.nn.embedding_lookup(self.word_embeddings, self.p['data'])
             self.q_emb = tf.nn.embedding_lookup(self.word_embeddings, self.q['data'])
 
-    # def _dialogue_pos_embedding(self, ids, emb_dim, scope='dialogue_pos_emb', reuse=False):
-    #     with tf.variable_scope(scope, reuse=reuse):
-    #         pos_emb = tf.get_variable('dia_pos_emb', dtype=tf.float32,
-    #                                   shape=(self._config['dia_pos_num'], emb_dim))
-    #         res = tf.nn.embedding_lookup(pos_emb, ids)
-    #         return res
+    def _dialogue_pos_embedding(self, scope='dialogue_pos_emb', reuse=False):
+        with tf.variable_scope(scope, reuse=reuse):
+            pos_emb = tf.get_variable('dia_pos_emb', dtype=tf.float32,
+                                      shape=(self.vocab_pos.size(), self.vocab_pos.embed_dim))
+            self.p_pos_embed = tf.nn.embedding_lookup(pos_emb, self.p_pos)
+            self.q_pos_embed = tf.nn.embedding_lookup(pos_emb, self.q_pos)
 
     # def fusion(self, old, new, name):
     #     # 连接特征
@@ -159,6 +163,7 @@ class RCModel(object):
     def _single_encoder(self, reuse=False):
         with tf.variable_scope('paragraph_encoder', reuse=reuse):
             hidden, layers, heads, ffd_hidden = self.hidden_size, self.layer, self.head, self.fully_hidden
+            # self.p_emb = tfu.dense(tf.concat([self.p_emb, self.p_pos_embed], axis=2), self.hidden_size, scope='p_pos')
             sent = tfu.add_timing_signal(self.p_emb)
             # sent = tfu.dropout(sent, self._kprob, self._is_train)
             trans = tfu.TransformerEncoder(hidden=hidden, layers=layers, heads=heads, ffd_hidden=ffd_hidden,
@@ -176,7 +181,8 @@ class RCModel(object):
             # sent = tf.reshape(emb, [self._batch * sent_num, word_num, emb_h])
             # sent_mask = tf.reshape(mask, [self._batch * sent_num, word_num])
             self.para_emb = self._single_encoder()  # 得到了所有段落的表示     batch5, num, hidden
-            self.sep_p_encodes, _ = rnn('bi-lstm', self.para_emb, self.p_length, self.hidden_size)  # 得到rnn的输出和状态
+            # self.sep_p_encodes, _ = rnn('bi-lstm', self.para_emb, self.p_length, self.hidden_size)  # 得到rnn的输出和状态
+            self.sep_p_encodes = tfu.dense(self.para_emb, self.hidden_size*2, scope='transformer_linear')
             # hidden = para_emb.shape.as_list()[-1]
             # # 下面得到段落级别的表示，batch5， hidden
             # para_level_emb, prob = tfu.summ(para_emb, hidden, self.p['mask'],
@@ -234,6 +240,7 @@ class RCModel(object):
         #     self.sep_p_encodes, _ = rnn('bi-lstm', self.p_emb, self.p_length, self.hidden_size) # 得到rnn的输出和状态
 
         with tf.variable_scope('question_encoding'):
+            self.q_emb = tfu.dense(tf.concat([self.q_emb, self.q_pos_embed], axis=2), self.hidden_size, scope='q_pos')
             self.sep_q_encodes, _ = rnn('bi-lstm', self.q_emb, self.q_length, self.hidden_size)
         if self.use_dropout:
             self.sep_p_encodes = tf.nn.dropout(self.sep_p_encodes, self.dropout_keep_prob)
@@ -390,8 +397,8 @@ class RCModel(object):
         for bitx, batch in enumerate(train_batches, 1):
             feed_dict = {self.p['data']: batch['passage_token_ids'],
                          self.q['data']: batch['question_token_ids'],
-                         self.p_length: batch['passage_length'],
-                         self.q_length: batch['question_length'],
+                         self.p_pos: batch['passage_pos_ids'],
+                         self.q_pos: batch['question_pos_ids'],
                          self.start_label: batch['start_id'],
                          self.end_label: batch['end_id']}
             _, loss = self.sess.run([self.train_op, self.loss], feed_dict)
@@ -457,8 +464,8 @@ class RCModel(object):
         for b_itx, batch in enumerate(eval_batches):
             feed_dict = {self.p['data']: batch['passage_token_ids'],
                          self.q['data']: batch['question_token_ids'],
-                         self.p_length: batch['passage_length'],
-                         self.q_length: batch['question_length'],
+                         self.p_pos: batch['passage_pos_ids'],
+                         self.q_pos: batch['question_pos_ids'],
                          self.start_label: batch['start_id'],
                          self.end_label: batch['end_id']}
             start_probs, end_probs, loss = self.sess.run([self.start_probs,
