@@ -79,6 +79,11 @@ class BRCDataset(object):
                 for d_idx, doc in enumerate(sample['documents']):   # 对每一篇文档处理
                     if train:                                       # 把被选择的和未被选择的最相关的段落都加到sample['passages']
                         most_related_para = doc['most_related_para']
+                        if len(doc['segmented_paragraphs'][most_related_para]) == 0:
+                            print(lidx)
+                            print(line)
+                            print(d_idx)
+                            print(doc)
                         sample['passages'].append(
                             {'passage_tokens': doc['segmented_paragraphs'][most_related_para],
                              'is_selected': doc['is_selected'],
