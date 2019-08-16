@@ -97,7 +97,7 @@ class RCModel(object):
         # self._fusion()
         self._encode()
         self._match()
-        self._fuse()
+        # self._fuse()
         # self._self_attention()  # add self_attention
         self._decode()
         self._compute_loss()
@@ -119,7 +119,7 @@ class RCModel(object):
 
         self.p = _mapper(tf.placeholder(tf.int32, [None, None]))
         self.q = _mapper(tf.placeholder(tf.int32, [None, None]))
-        self.p_pos = tf.placeholder(tf.int32, [None, None])
+        # self.p_pos = tf.placeholder(tf.int32, [None, None])
         self.q_pos = tf.placeholder(tf.int32, [None, None])
         self.p_length = self.p['length']
         self.q_length = self.q['length']
@@ -147,7 +147,7 @@ class RCModel(object):
         with tf.variable_scope(scope, reuse=reuse):
             pos_emb = tf.get_variable('dia_pos_emb', dtype=tf.float32,
                                       shape=(self.vocab_pos.size(), self.vocab_pos.embed_dim))
-            self.p_pos_embed = tf.nn.embedding_lookup(pos_emb, self.p_pos)
+            # self.p_pos_embed = tf.nn.embedding_lookup(pos_emb, self.p_pos)
             self.q_pos_embed = tf.nn.embedding_lookup(pos_emb, self.q_pos)
 
     # def fusion(self, old, new, name):
@@ -241,7 +241,7 @@ class RCModel(object):
 
         with tf.variable_scope('question_encoding'):
             self.q_emb = tfu.dense(tf.concat([self.q_emb, self.q_pos_embed], axis=2), self.hidden_size, scope='q_pos')
-            self.sep_q_encodes, _ = rnn('bi-lstm', self.q_emb, self.q_length, self.hidden_size)
+            self.sep_q_encodes, _ = rnn('bi-gru', self.q_emb, self.q_length, self.hidden_size)
         if self.use_dropout:
             self.sep_p_encodes = tf.nn.dropout(self.sep_p_encodes, self.dropout_keep_prob)
             # self.sep_p_encodes += modules.positional_encoding(self.p['data'], self.hidden_size,
@@ -267,56 +267,56 @@ class RCModel(object):
             self.match_p_encodes = tf.nn.dropout(self.match_p_encodes, self.dropout_keep_prob)
             self.match_q_encodes = tf.nn.dropout(self.match_q_encodes, self.dropout_keep_prob)
 
-    def _fuse(self):
-        """
-        Employs Bi-LSTM again to fuse the context information after match layer
-        """
-        with tf.variable_scope('fusion_p'):
-            self.fuse_p_encodes, _ = rnn('bi-lstm', self.match_p_encodes, self.p_length,
-                                         self.hidden_size, layer_num=1)  # 经过双向RNN,变成前向+后向，150+150
-        with tf.variable_scope('fusion_q'):
-            self.fuse_q_encodes, _ = rnn('bi-lstm', self.match_q_encodes, self.q_length,
-                                         self.hidden_size, layer_num=1)  # 经过双向RNN,变成前向+后向，150+150
-        if self.use_dropout:
-            self.fuse_p_encodes = tf.nn.dropout(self.fuse_p_encodes, self.dropout_keep_prob)
-            self.fuse_q_encodes = tf.nn.dropout(self.fuse_q_encodes, self.dropout_keep_prob)
+    # def _fuse(self):
+    #     """
+    #     Employs Bi-LSTM again to fuse the context information after match layer
+    #     """
+    #     with tf.variable_scope('fusion_p'):
+    #         self.fuse_p_encodes, _ = rnn('bi-lstm', self.match_p_encodes, self.p_length,
+    #                                      self.hidden_size, layer_num=1)  # 经过双向RNN,变成前向+后向，150+150
+    #     with tf.variable_scope('fusion_q'):
+    #         self.fuse_q_encodes, _ = rnn('bi-lstm', self.match_q_encodes, self.q_length,
+    #                                      self.hidden_size, layer_num=1)  # 经过双向RNN,变成前向+后向，150+150
+    #     if self.use_dropout:
+    #         self.fuse_p_encodes = tf.nn.dropout(self.fuse_p_encodes, self.dropout_keep_prob)
+    #         self.fuse_q_encodes = tf.nn.dropout(self.fuse_q_encodes, self.dropout_keep_prob)
 
-    def _self_attention(self):
-        # 双线性softmax
-        with tf.variable_scope('bi_linear'):
-            # 经过双向lstm，最后一维变成300
-            batch_add5 = tf.shape(self.fuse_p_encodes)[0]
-
-            # use xavier initialization
-            W_bi = tf.get_variable("W_bi", [self.hidden_size * 2, self.hidden_size * 2],
-                                   initializer=tf.contrib.layers.xavier_initializer())
-            # W_bi = tf.get_variable("W_bi", [self.hidden_size * 2, self.hidden_size * 2],
-            #                        initializer=tf.random_normal_initializer(mean=0.0, stddev=0.1, seed=None, dtype=tf.float32))
-            tmp = tf.reshape(self.fuse_p_encodes, [-1, self.hidden_size*2])
-            tmp = tf.matmul(tmp, W_bi)
-            tmp = tf.reshape(tmp, [batch_add5, -1, self.hidden_size*2])
-            # 以上就是通过reshape的方式进行双线性变化
-            before_softmax = tf.matmul(tmp, self.fuse_p_encodes, transpose_b=True)      # b, n, n
-            L = tfu.mask_softmax(before_softmax, self.p['mask'])
-            # L = tf.nn.softmax(tf.matmul(tmp, self.fuse_p_encodes, transpose_b=True))
-            self.binear_passage = tf.matmul(L, self.fuse_p_encodes)
-            self.binear_passage = tfu.fusion(self.fuse_p_encodes, self.binear_passage, self.hidden_size, name="binear")
-
-            # 将最后一维变成self.hidden_size
-            # self.binear_passage = tfu.dense(self.binear_passage, 1, "to_hidden_size")
-            # 需要再经过一个双向LISTM
-            with tf.variable_scope('self_attention'):
-                self.fina_passage, _ = rnn('bi-lstm', self.binear_passage, self.p_length,
-                                             self.hidden_size, layer_num=1)  # 经过双向RNN,变成前向+后向，150+150
-
-            # 对问题操作,自对其，后续
-            W_q = tf.get_variable("W_q", [self.hidden_size * 2, self.hidden_size * 2],
-                                   initializer=tf.contrib.layers.xavier_initializer())
-            tmp = tf.reshape(self.fuse_q_encodes, [-1, self.hidden_size * 2])
-            tmp = tf.matmul(tmp, W_q)
-            tmp = tf.reshape(tmp, [batch_add5, -1, self.hidden_size * 2])   # b, q-len, hidden
-            alpha = tf.nn.softmax(tmp)      # b, n_q, 300
-            self.self_ques = alpha*self.fuse_q_encodes
+    # def _self_attention(self):
+    #     # 双线性softmax
+    #     with tf.variable_scope('bi_linear'):
+    #         # 经过双向lstm，最后一维变成300
+    #         batch_add5 = tf.shape(self.fuse_p_encodes)[0]
+    #
+    #         # use xavier initialization
+    #         W_bi = tf.get_variable("W_bi", [self.hidden_size * 2, self.hidden_size * 2],
+    #                                initializer=tf.contrib.layers.xavier_initializer())
+    #         # W_bi = tf.get_variable("W_bi", [self.hidden_size * 2, self.hidden_size * 2],
+    #         #                        initializer=tf.random_normal_initializer(mean=0.0, stddev=0.1, seed=None, dtype=tf.float32))
+    #         tmp = tf.reshape(self.fuse_p_encodes, [-1, self.hidden_size*2])
+    #         tmp = tf.matmul(tmp, W_bi)
+    #         tmp = tf.reshape(tmp, [batch_add5, -1, self.hidden_size*2])
+    #         # 以上就是通过reshape的方式进行双线性变化
+    #         before_softmax = tf.matmul(tmp, self.fuse_p_encodes, transpose_b=True)      # b, n, n
+    #         L = tfu.mask_softmax(before_softmax, self.p['mask'])
+    #         # L = tf.nn.softmax(tf.matmul(tmp, self.fuse_p_encodes, transpose_b=True))
+    #         self.binear_passage = tf.matmul(L, self.fuse_p_encodes)
+    #         self.binear_passage = tfu.fusion(self.fuse_p_encodes, self.binear_passage, self.hidden_size, name="binear")
+    #
+    #         # 将最后一维变成self.hidden_size
+    #         # self.binear_passage = tfu.dense(self.binear_passage, 1, "to_hidden_size")
+    #         # 需要再经过一个双向LISTM
+    #         with tf.variable_scope('self_attention'):
+    #             self.fina_passage, _ = rnn('bi-lstm', self.binear_passage, self.p_length,
+    #                                          self.hidden_size, layer_num=1)  # 经过双向RNN,变成前向+后向，150+150
+    #
+    #         # 对问题操作,自对其，后续
+    #         W_q = tf.get_variable("W_q", [self.hidden_size * 2, self.hidden_size * 2],
+    #                                initializer=tf.contrib.layers.xavier_initializer())
+    #         tmp = tf.reshape(self.fuse_q_encodes, [-1, self.hidden_size * 2])
+    #         tmp = tf.matmul(tmp, W_q)
+    #         tmp = tf.reshape(tmp, [batch_add5, -1, self.hidden_size * 2])   # b, q-len, hidden
+    #         alpha = tf.nn.softmax(tmp)      # b, n_q, 300
+    #         self.self_ques = alpha*self.fuse_q_encodes
 
     def _decode(self):
         """
@@ -328,14 +328,14 @@ class RCModel(object):
         with tf.variable_scope('same_question_concat'):
             batch_size = tf.shape(self.start_label)[0]
             concat_passage_encodes = tf.reshape(
-                self.fuse_p_encodes,
+                self.match_p_encodes,
                 [batch_size, -1, 2 * self.hidden_size]
             )       # fina_passage: b*5, len_p, hidden --> b, 5*len_p, hidden
 
             # b, 5, len_q, hidden       [0:, 0, 0:, 0:] 表示只用第一个问题，因为5个问题都是一样的
             no_dup_question_encodes = tf.reshape(
-                self.fuse_q_encodes,
-                [batch_size, -1, tf.shape(self.fuse_q_encodes)[1], 2 * self.hidden_size]
+                self.match_q_encodes,
+                [batch_size, -1, tf.shape(self.match_q_encodes)[1], 2 * self.hidden_size]
             )[0:, 0, 0:, 0:]
 
         decoder = PointerNetDecoder(self.hidden_size)
@@ -385,7 +385,7 @@ class RCModel(object):
 
         # self.train_op = self.optimizer.minimize(self.loss)
 
-    def _train_epoch(self, train_batches, dropout_keep_prob):
+    def _train_epoch(self, train_batches, data, epoch, batch_size, pad_id, save_dir, save_prefix, rand_seed):
         """
         Trains the model for a single epoch.
         Args:
@@ -393,11 +393,12 @@ class RCModel(object):
             dropout_keep_prob: float value indicating dropout keep probability
         """
         total_num, total_loss = 0, 0
-        log_every_n_batch, n_batch_loss = 50, 0
+        log_every_n_batch, n_batch_loss = 100, 0
+        max_bleu_4 = 0
         for bitx, batch in enumerate(train_batches, 1):
             feed_dict = {self.p['data']: batch['passage_token_ids'],
                          self.q['data']: batch['question_token_ids'],
-                         self.p_pos: batch['passage_pos_ids'],
+                         # self.p_pos: batch['passage_pos_ids'],
                          self.q_pos: batch['question_pos_ids'],
                          self.start_label: batch['start_id'],
                          self.end_label: batch['end_id']}
@@ -409,6 +410,18 @@ class RCModel(object):
                 self.logger.info('Average loss from batch {} to {} is {}'.format(
                     bitx - log_every_n_batch + 1, bitx, n_batch_loss / log_every_n_batch))
                 n_batch_loss = 0
+
+                # test dev set
+                self.logger.info('Evaluating the model after epoch {}'.format(epoch))
+                if data.dev_set is not None:
+                    eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False)
+                    eval_loss, bleu_rouge = self.evaluate(eval_batches)
+                    self.logger.info('Dev eval loss {}'.format(eval_loss))
+                    self.logger.info('Dev eval result: {}'.format(bleu_rouge))
+
+                    if bleu_rouge['Bleu-4'] > max_bleu_4:
+                        self.save(save_dir, save_prefix, rand_seed)
+                        max_bleu_4 = bleu_rouge['Bleu-4']
         return 1.0 * total_loss / total_num
 
     def train(self, data, epochs, batch_size, save_dir, save_prefix, rand_seed,
@@ -429,7 +442,7 @@ class RCModel(object):
         for epoch in range(1, epochs + 1):
             self.logger.info('Training the model for epoch {}'.format(epoch))
             train_batches = data.gen_mini_batches('train', batch_size, pad_id, shuffle=True)
-            train_loss = self._train_epoch(train_batches, dropout_keep_prob)
+            train_loss = self._train_epoch(train_batches, data, epoch, batch_size, pad_id, save_dir, save_prefix, rand_seed)
             self.logger.info('Average train loss for epoch {} is {}'.format(epoch, train_loss))
 
             if evaluate:
@@ -447,7 +460,7 @@ class RCModel(object):
                     self.logger.warning('No dev set is loaded for evaluation in the dataset!')
             else:
                 self.save(save_dir, save_prefix + '_' + str(epoch))
-        tf.reset_default_graph()
+        # tf.reset_default_graph()
 
     def evaluate(self, eval_batches, result_dir=None, result_prefix=None, save_full_info=False):
         """
@@ -464,7 +477,7 @@ class RCModel(object):
         for b_itx, batch in enumerate(eval_batches):
             feed_dict = {self.p['data']: batch['passage_token_ids'],
                          self.q['data']: batch['question_token_ids'],
-                         self.p_pos: batch['passage_pos_ids'],
+                         # self.p_pos: batch['passage_pos_ids'],
                          self.q_pos: batch['question_pos_ids'],
                          self.start_label: batch['start_id'],
                          self.end_label: batch['end_id']}
@@ -515,7 +528,7 @@ class RCModel(object):
             bleu_rouge = compute_bleu_rouge(pred_dict, ref_dict)
         else:
             bleu_rouge = None
-        tf.reset_default_graph()
+        # tf.reset_default_graph()
         return ave_loss, bleu_rouge
 
     def find_best_answer(self, sample, start_prob, end_prob, padded_p_len):
