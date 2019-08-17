@@ -84,9 +84,9 @@ def parse_args():
                                 help='Transformer head')
     model_settings.add_argument('--max_p_num', type=int, default=5,
                                 help='max passage num in one sample')
-    model_settings.add_argument('--max_p_len', type=int, default=300,
+    model_settings.add_argument('--max_p_len', type=int, default=500,
                                 help='max length of passage')   # modify 300
-    model_settings.add_argument('--max_q_len', type=int, default=20,
+    model_settings.add_argument('--max_q_len', type=int, default=60,
                                 help='max length of question')  # modify 20
     model_settings.add_argument('--max_a_len', type=int, default=200,
                                 help='max length of answer')

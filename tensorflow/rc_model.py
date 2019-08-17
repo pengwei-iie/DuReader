@@ -119,7 +119,7 @@ class RCModel(object):
 
         self.p = _mapper(tf.placeholder(tf.int32, [None, None]))
         self.q = _mapper(tf.placeholder(tf.int32, [None, None]))
-        # self.p_pos = tf.placeholder(tf.int32, [None, None])
+        self.p_pos = tf.placeholder(tf.int32, [None, None])
         self.q_pos = tf.placeholder(tf.int32, [None, None])
         self.p_length = self.p['length']
         self.q_length = self.q['length']
@@ -147,7 +147,7 @@ class RCModel(object):
         with tf.variable_scope(scope, reuse=reuse):
             pos_emb = tf.get_variable('dia_pos_emb', dtype=tf.float32,
                                       shape=(self.vocab_pos.size(), self.vocab_pos.embed_dim))
-            # self.p_pos_embed = tf.nn.embedding_lookup(pos_emb, self.p_pos)
+            self.p_pos_embed = tf.nn.embedding_lookup(pos_emb, self.p_pos)
             self.q_pos_embed = tf.nn.embedding_lookup(pos_emb, self.q_pos)
 
     # def fusion(self, old, new, name):
@@ -398,7 +398,7 @@ class RCModel(object):
         for bitx, batch in enumerate(train_batches, 1):
             feed_dict = {self.p['data']: batch['passage_token_ids'],
                          self.q['data']: batch['question_token_ids'],
-                         # self.p_pos: batch['passage_pos_ids'],
+                         self.p_pos: batch['passage_pos_ids'],
                          self.q_pos: batch['question_pos_ids'],
                          self.start_label: batch['start_id'],
                          self.end_label: batch['end_id']}
@@ -477,7 +477,7 @@ class RCModel(object):
         for b_itx, batch in enumerate(eval_batches):
             feed_dict = {self.p['data']: batch['passage_token_ids'],
                          self.q['data']: batch['question_token_ids'],
-                         # self.p_pos: batch['passage_pos_ids'],
+                         self.p_pos: batch['passage_pos_ids'],
                          self.q_pos: batch['question_pos_ids'],
                          self.start_label: batch['start_id'],
                          self.end_label: batch['end_id']}
