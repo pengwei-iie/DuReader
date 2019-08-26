@@ -104,7 +104,7 @@ class AttentionFlowMatchLayer(object):
             context2question_attn = tf.matmul(sim_matrix_i, question_encodes)   # 默认就是-1，对最后一维进行操作 b*len(pa)*hidden
 
             sim_matrix_j = tf.expand_dims(tf.reduce_max(sim_matrix, 2), 1)
-            sim_matrix_j = tfu.mask_softmax(sim_matrix_j, p['mask'], 1)         # b*1*len(pa)
+            sim_matrix_j = tfu.mask_softmax(sim_matrix_j, p['mask'], -1)         # b*1*len(pa)
             # b = tf.nn.softmax(, -1)              # b*1*len(pa)
             question2context_attn = tf.tile(tf.matmul(sim_matrix_j, passage_encodes),           # b*1*hidden
                                          [1, tf.shape(passage_encodes)[1], 1])                  # b*len(pa)*hidden

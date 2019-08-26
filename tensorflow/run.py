@@ -56,7 +56,7 @@ def parse_args():
                                 help='learning rate')
     train_settings.add_argument('--weight_decay', type=float, default=0,
                                 help='weight decay')
-    train_settings.add_argument('--dropout_keep_prob', type=float, default=0.4,
+    train_settings.add_argument('--dropout_keep_prob', type=float, default=1.0,
                                 help='dropout keep rate')
     train_settings.add_argument('--batch_size', type=int, default=32,
                                 help='train batch size')
