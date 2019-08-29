@@ -236,8 +236,8 @@ class RCModel(object):
             #     self._config['dialogue'], sent_level_emb, dia_mask, self._dialogue['pos'], 'dialogue', reuse)
 
             # return sent_level_emb, prob, select_ids, select_emb
-        # with tf.variable_scope('passage_encoding'):
-        #     self.sep_p_encodes, _ = rnn('bi-lstm', self.p_emb, self.p_length, self.hidden_size) # 得到rnn的输出和状态
+        with tf.variable_scope('passage_encoding'):
+            self.sep_p_encodes, _ = rnn('bi-lstm', self.sep_p_encodes, self.p_length, self.hidden_size) # 得到rnn的输出和状态
 
         with tf.variable_scope('question_encoding'):
             # self.q_emb = tfu.dense(tf.concat([self.q_emb, self.q_pos_embed], axis=2), self.hidden_size, scope='q_pos')
@@ -413,16 +413,16 @@ class RCModel(object):
                 n_batch_loss = 0
 
                 # test dev set
-                self.logger.info('Evaluating the model after epoch {}'.format(epoch))
-                if data.dev_set is not None:
-                    eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False)
-                    eval_loss, bleu_rouge = self.evaluate(eval_batches)
-                    self.logger.info('Dev eval loss {}'.format(eval_loss))
-                    self.logger.info('Dev eval result: {}'.format(bleu_rouge))
-
-                    if bleu_rouge['Bleu-4'] > max_bleu_4:
-                        self.save(save_dir, save_prefix, rand_seed)
-                        max_bleu_4 = bleu_rouge['Bleu-4']
+                # self.logger.info('Evaluating the model after epoch {}'.format(epoch))
+                # if data.dev_set is not None:
+                #     eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False)
+                #     eval_loss, bleu_rouge = self.evaluate(eval_batches)
+                #     self.logger.info('Dev eval loss {}'.format(eval_loss))
+                #     self.logger.info('Dev eval result: {}'.format(bleu_rouge))
+                #
+                #     if bleu_rouge['Bleu-4'] > max_bleu_4:
+                #         self.save(save_dir, save_prefix, rand_seed)
+                #         max_bleu_4 = bleu_rouge['Bleu-4']
         return 1.0 * total_loss / total_num
 
     def train(self, data, epochs, batch_size, save_dir, save_prefix, rand_seed,
