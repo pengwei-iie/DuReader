@@ -41,7 +41,7 @@ class RCModel(object):
     Implements the main reading comprehension model.
     """
 
-    def __init__(self, vocab, vocab_pos, args):
+    def __init__(self, vocab, args):
 
         # logging
         self.logger = logging.getLogger("brc")
@@ -68,7 +68,7 @@ class RCModel(object):
 
         # the vocab
         self.vocab = vocab
-        self.vocab_pos = vocab_pos
+        # self.vocab_pos = vocab_pos
 
         # session info
         sess_config = tf.ConfigProto()
@@ -93,7 +93,7 @@ class RCModel(object):
         # for i in range(num_gpus):
         #     with tf.device('/gpu:%d', i):
         self._embed()
-        self._dialogue_pos_embedding()
+        # self._dialogue_pos_embedding()
         # self._fusion()
         self._encode()
         self._match()
@@ -143,12 +143,12 @@ class RCModel(object):
             self.p_emb = tf.nn.embedding_lookup(self.word_embeddings, self.p['data'])
             self.q_emb = tf.nn.embedding_lookup(self.word_embeddings, self.q['data'])
 
-    def _dialogue_pos_embedding(self, scope='dialogue_pos_emb', reuse=False):
-        with tf.variable_scope(scope, reuse=reuse):
-            pos_emb = tf.get_variable('dia_pos_emb', dtype=tf.float32,
-                                      shape=(self.vocab_pos.size(), self.vocab_pos.embed_dim))
-            self.p_pos_embed = tf.nn.embedding_lookup(pos_emb, self.p_pos)
-            self.q_pos_embed = tf.nn.embedding_lookup(pos_emb, self.q_pos)
+    # def _dialogue_pos_embedding(self, scope='dialogue_pos_emb', reuse=False):
+    #     with tf.variable_scope(scope, reuse=reuse):
+    #         pos_emb = tf.get_variable('dia_pos_emb', dtype=tf.float32,
+    #                                   shape=(self.vocab_pos.size(), self.vocab_pos.embed_dim))
+    #         self.p_pos_embed = tf.nn.embedding_lookup(pos_emb, self.p_pos)
+    #         self.q_pos_embed = tf.nn.embedding_lookup(pos_emb, self.q_pos)
 
     # def fusion(self, old, new, name):
     #     # 连接特征
@@ -240,7 +240,8 @@ class RCModel(object):
         #     self.sep_p_encodes, _ = rnn('bi-lstm', self.p_emb, self.p_length, self.hidden_size) # 得到rnn的输出和状态
 
         with tf.variable_scope('question_encoding'):
-            self.q_emb = tfu.dense(tf.concat([self.q_emb, self.q_pos_embed], axis=2), self.hidden_size, scope='q_pos')
+            # self.q_emb = tfu.dense(tf.concat([self.q_emb, self.q_pos_embed], axis=2), self.hidden_size, scope='q_pos')
+            self.q_emb = tfu.dense(self.q_emb, self.hidden_size, scope='q_pos')
             self.sep_q_encodes, _ = rnn('bi-gru', self.q_emb, self.q_length, self.hidden_size)
         if self.use_dropout:
             self.sep_p_encodes = tf.nn.dropout(self.sep_p_encodes, self.dropout_keep_prob)

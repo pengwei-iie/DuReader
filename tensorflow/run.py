@@ -176,17 +176,18 @@ def train(args):
     with open(os.path.join(args.vocab_dir, 'vocab.data'), 'rb') as fin:
         vocab = pickle.load(fin)
 
-    with open(os.path.join(args.vocab_dir, 'pos.data'), 'rb') as fin:
-        vocab_pos = pickle.load(fin)
+    # with open(os.path.join(args.vocab_dir, 'pos.data'), 'rb') as fin:
+    #     vocab_pos = pickle.load(fin)
 
     brc_data = BRCDataset(args.max_p_num, args.max_p_len, args.max_q_len,
                           args.train_files, args.dev_files)     # 5, 500, 60.训练的时候不需要测试集
     logger.info('Converting text into ids...')
     brc_data.convert_to_ids(vocab)
-    brc_data.convert_to_pos_ids(vocab_pos)
+    # brc_data.convert_to_pos_ids(vocab_pos)
 
     logger.info('Initialize the model...')
-    rc_model = RCModel(vocab, vocab_pos, args)
+    # rc_model = RCModel(vocab, vocab_pos, args)
+    rc_model = RCModel(vocab, args)
 
     # if os.path.exists(os.path.join(args.model_dir, 'checkpoint')):
         # rc_model.restore(model_dir=args.model_dir, model_prefix=args.algo, rand_seed=args.rand_seed)
