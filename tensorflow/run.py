@@ -133,12 +133,12 @@ def prepare(args):
     brc_data = BRCDataset(args.max_p_num, args.max_p_len, args.max_q_len,
                           args.train_files, args.dev_files, args.test_files)    # 给训练集增加了每篇文档最相关的段落，sample['passages']，验证和测试也是，只不过用的是问题和段落算的召回
     vocab = Vocab(lower=True)                                                   # 目前只有blank和unk
-    vocab_pos = Vocab()
+    # vocab_pos = Vocab()
     for word in brc_data.word_iter('train'):    # 问题里和一个样例中的每个段落（5个段落代表5篇文章）的token
         vocab.add(word)
 
-    for pos in brc_data.pos_iter('train'):    # 问题里和一个样例中的每个段落（5个段落代表5篇文章）的token
-        vocab_pos.add(pos)
+    # for pos in brc_data.pos_iter('train'):    # 问题里和一个样例中的每个段落（5个段落代表5篇文章）的token
+    #     vocab_pos.add(pos)
 
     unfiltered_vocab_size = vocab.size()
     vocab.filter_tokens_by_cnt(min_cnt=2)
@@ -146,19 +146,19 @@ def prepare(args):
     logger.info('After filter {} tokens, the final vocab size is {}'.format(filtered_num,
                                                                             vocab.size()))
 
-    logger.info('The final pos vocab size is {}'.format(vocab_pos.size()))
+    # logger.info('The final pos vocab size is {}'.format(vocab_pos.size()))
 
     logger.info('Assigning embeddings...')
     vocab.randomly_init_embeddings(args.embed_size)
 
-    vocab_pos.randomly_init_embeddings(args.embed_pos)
-
+    # vocab_pos.randomly_init_embeddings(args.embed_pos)
+    #
     logger.info('Saving vocab...')
     with open(os.path.join(args.vocab_dir, 'vocab.data'), 'wb') as fout:
         pickle.dump(vocab, fout)
 
-    with open(os.path.join(args.vocab_dir, 'pos.data'), 'wb') as fout:
-        pickle.dump(vocab_pos, fout)
+    # with open(os.path.join(args.vocab_dir, 'pos.data'), 'wb') as fout:
+    #     pickle.dump(vocab_pos, fout)
 
     logger.info('Done with preparing!')
 

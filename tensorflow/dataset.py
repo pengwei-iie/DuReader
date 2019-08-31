@@ -72,10 +72,10 @@ class BRCDataset(object):
                     sample['answer_passages'] = sample['answer_docs']
 
                 sample['question_tokens'] = sample['segmented_question']
-                sample['question_pos'] = self.add_position(sample['question_tokens'], if_passage=False)
+                # sample['question_pos'] = self.add_position(sample['question_tokens'], if_passage=False)
 
                 sample['passages'] = []
-                sample['pos'] = []
+                # sample['pos'] = []
                 for d_idx, doc in enumerate(sample['documents']):   # 对每一篇文档处理
                     if train:                                       # 把被选择的和未被选择的最相关的段落都加到sample['passages']
                         most_related_para = doc['most_related_para']
@@ -83,8 +83,9 @@ class BRCDataset(object):
                             continue
                         sample['passages'].append(
                             {'passage_tokens': doc['segmented_paragraphs'][most_related_para],
-                             'is_selected': doc['is_selected'],
-                             'passage_pos': self.add_position(doc['segmented_paragraphs'][most_related_para], True)}
+                             'is_selected': doc['is_selected']
+                             # 'passage_pos': self.add_position(doc['segmented_paragraphs'][most_related_para], True)
+                             }
                         )
                     else:
                         para_infos = [] # 存的是段落，段落和问题的common在问题长度的占比，以及段落的长度
@@ -102,8 +103,9 @@ class BRCDataset(object):
                         for para_info in para_infos[:1]:    # 只取第一个最高的
                             fake_passage_tokens += para_info[0]
                         # 把最高的那个段落加到sample['passages']
-                        sample['passages'].append({'passage_tokens': fake_passage_tokens,
-                                                   'passage_pos': self.add_position(fake_passage_tokens, True)})
+                        sample['passages'].append({'passage_tokens': fake_passage_tokens
+                                                   # 'passage_pos': self.add_position(fake_passage_tokens, True)
+                                                   })
 
                         # add positional info
                         # sample['pos']
@@ -123,10 +125,10 @@ class BRCDataset(object):
         batch_data = {'raw_data': [data[i] for i in indices],
                       'question_token_ids': [],
                       'question_length': [],
-                      'question_pos_ids': [],
+                      # 'question_pos_ids': [],
                       'passage_token_ids': [],
                       'passage_length': [],
-                      'passage_pos_ids': [],
+                      # 'passage_pos_ids': [],
                       'start_id': [],
                       'end_id': []}
         max_passage_num = max([len(sample['passages']) for sample in batch_data['raw_data']])
@@ -136,21 +138,21 @@ class BRCDataset(object):
                 if pidx < len(sample['passages']):
                     batch_data['question_token_ids'].append(sample['question_token_ids'])
                     batch_data['question_length'].append(len(sample['question_token_ids']))
-                    batch_data['question_pos_ids'].append(
-                        self.add_position(sample['question_token_ids'], if_passage=False))
+                    # batch_data['question_pos_ids'].append(
+                    #     self.add_position(sample['question_token_ids'], if_passage=False))
                     passage_token_ids = sample['passages'][pidx]['passage_token_ids']
                     batch_data['passage_token_ids'].append(passage_token_ids)
                     batch_data['passage_length'].append(min(len(passage_token_ids), self.max_p_len))
-                    batch_data['passage_pos_ids'].append(
-                        self.add_position(passage_token_ids, if_passage=True))
+                    # batch_data['passage_pos_ids'].append(
+                    #     self.add_position(passage_token_ids, if_passage=True))
 
                 else:
                     batch_data['question_token_ids'].append([])
                     batch_data['question_length'].append(0)
-                    batch_data['question_pos_ids'].append([])
+                    # batch_data['question_pos_ids'].append([])
                     batch_data['passage_token_ids'].append([])
                     batch_data['passage_length'].append(0)
-                    batch_data['passage_pos_ids'].append([])
+                    # batch_data['passage_pos_ids'].append([])
         batch_data, padded_p_len, padded_q_len = self._dynamic_padding(batch_data, pad_id)
         for sample in batch_data['raw_data']:
             if 'answer_passages' in sample and len(sample['answer_passages']):
@@ -171,12 +173,12 @@ class BRCDataset(object):
         pad_q_len = min(self.max_q_len, max(batch_data['question_length']))
         batch_data['passage_token_ids'] = [(ids + [pad_id] * (pad_p_len - len(ids)))[: pad_p_len]
                                            for ids in batch_data['passage_token_ids']]
-        batch_data['passage_pos_ids'] = [(ids + [pad_id] * (pad_p_len - len(ids)))[: pad_p_len]
-                                           for ids in batch_data['passage_pos_ids']]
+        # batch_data['passage_pos_ids'] = [(ids + [pad_id] * (pad_p_len - len(ids)))[: pad_p_len]
+        #                                    for ids in batch_data['passage_pos_ids']]
         batch_data['question_token_ids'] = [(ids + [pad_id] * (pad_q_len - len(ids)))[: pad_q_len]
                                             for ids in batch_data['question_token_ids']]
-        batch_data['question_pos_ids'] = [(ids + [pad_id] * (pad_q_len - len(ids)))[: pad_q_len]
-                                            for ids in batch_data['question_pos_ids']]
+        # batch_data['question_pos_ids'] = [(ids + [pad_id] * (pad_q_len - len(ids)))[: pad_q_len]
+        #                                     for ids in batch_data['question_pos_ids']]
         return batch_data, pad_p_len, pad_q_len
 
     def word_iter(self, set_name=None):
@@ -205,42 +207,42 @@ class BRCDataset(object):
                     for token in passage['passage_tokens']:
                         yield token
 
-    def pos_iter(self, set_name=None):
-        """
-        Iterates over all the words in the dataset
-        Args:
-            set_name: if it is set, then the specific set will be used
-        Returns:
-            a generator
-        """
-        if set_name is None:
-            data_set = self.train_set + self.dev_set + self.test_set
-        elif set_name == 'train':
-            data_set = self.train_set
-        elif set_name == 'dev':
-            data_set = self.dev_set
-        elif set_name == 'test':
-            data_set = self.test_set
-        else:
-            raise NotImplementedError('No data set named as {}'.format(set_name))
-        if data_set is not None:
-            for sample in data_set:
-                for token in sample['question_pos']:
-                    yield token
-                for passage in sample['passages']:
-                    for token in passage['passage_pos']:
-                        yield token
+    # def pos_iter(self, set_name=None):
+    #     """
+    #     Iterates over all the words in the dataset
+    #     Args:
+    #         set_name: if it is set, then the specific set will be used
+    #     Returns:
+    #         a generator
+    #     """
+    #     if set_name is None:
+    #         data_set = self.train_set + self.dev_set + self.test_set
+    #     elif set_name == 'train':
+    #         data_set = self.train_set
+    #     elif set_name == 'dev':
+    #         data_set = self.dev_set
+    #     elif set_name == 'test':
+    #         data_set = self.test_set
+    #     else:
+    #         raise NotImplementedError('No data set named as {}'.format(set_name))
+    #     if data_set is not None:
+    #         for sample in data_set:
+    #             for token in sample['question_pos']:
+    #                 yield token
+    #             for passage in sample['passages']:
+    #                 for token in passage['passage_pos']:
+    #                     yield token
 
-    def add_position(self, lens, if_passage):
-        if if_passage:
-            step = self.max_p_len / len(lens)
-        else:
-            step = self.max_q_len / len(lens)
-        if step > 1:
-            ids = [int((ix + 1) * step - 1) for ix in range(len(lens))]
-        else:
-            ids = [int(ix * step) for ix in range(len(lens))]
-        return ids
+    # def add_position(self, lens, if_passage):
+    #     if if_passage:
+    #         step = self.max_p_len / len(lens)
+    #     else:
+    #         step = self.max_q_len / len(lens)
+    #     if step > 1:
+    #         ids = [int((ix + 1) * step - 1) for ix in range(len(lens))]
+    #     else:
+    #         ids = [int(ix * step) for ix in range(len(lens))]
+    #     return ids
 
     def convert_to_ids(self, vocab):
         """
@@ -256,19 +258,19 @@ class BRCDataset(object):
                 for passage in sample['passages']:
                     passage['passage_token_ids'] = vocab.convert_to_ids(passage['passage_tokens'])
 
-    def convert_to_pos_ids(self, vocab):
-        """
-        Convert the question and passage in the original dataset to ids
-        Args:
-            vocab: the vocabulary on this dataset
-        """
-        for data_set in [self.train_set, self.dev_set, self.test_set]:
-            if data_set is None:
-                continue
-            for sample in data_set:
-                sample['question_pos_ids'] = vocab.convert_to_ids(sample['question_pos'])
-                for passage in sample['passages']:
-                    passage['passage_pos_ids'] = vocab.convert_to_ids(passage['passage_pos'])
+    # def convert_to_pos_ids(self, vocab):
+    #     """
+    #     Convert the question and passage in the original dataset to ids
+    #     Args:
+    #         vocab: the vocabulary on this dataset
+    #     """
+    #     for data_set in [self.train_set, self.dev_set, self.test_set]:
+    #         if data_set is None:
+    #             continue
+    #         for sample in data_set:
+    #             sample['question_pos_ids'] = vocab.convert_to_ids(sample['question_pos'])
+    #             for passage in sample['passages']:
+    #                 passage['passage_pos_ids'] = vocab.convert_to_ids(passage['passage_pos'])
 
     def gen_mini_batches(self, set_name, batch_size, pad_id, shuffle=True):
         """
