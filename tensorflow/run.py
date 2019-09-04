@@ -162,8 +162,8 @@ def train(args):
     rc_model = RCModel(vocab, args)
 
     # 判断是否存在模型
-    if os.path.exists(os.path.join(args.model_dir, 'checkpoint')):
-        rc_model.restore(model_dir=args.model_dir, model_prefix=args.algo, rand_seed=args.rand_seed)
+    # if os.path.exists(os.path.join(args.model_dir, 'checkpoint')):
+    #     rc_model.restore(model_dir=args.model_dir, model_prefix=args.algo, rand_seed=args.rand_seed)
 
     logger.info('Training the model...')
     rc_model.train(brc_data, args.epochs, args.batch_size, save_dir=args.model_dir,
