@@ -74,7 +74,9 @@ class BRCDataset(object):
                 sample['question_tokens'] = sample['segmented_question']
 
                 sample['passages'] = []
-                for d_idx, doc in enumerate(sample['documents']):   # 对每一篇文档处理
+                for d_idx, doc in enumerate(sample['documents']):   # 对每一篇文档处理,如果是训练，直接用最相关的段落；否则使用问题进行计算找到最相关的段落
+                    if not doc['is_selected']:                      # fixme:prepare的时候不需要
+                        continue
                     if train:                                       # 把被选择的和未被选择的最相关的段落都加到sample['passages']
                         most_related_para = doc['most_related_para']
                         sample['passages'].append(
