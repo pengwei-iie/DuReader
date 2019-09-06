@@ -99,6 +99,8 @@ def parse_args():
                                help='the dir to store models')
     path_settings.add_argument('--result_dir', default='../data/results/',
                                help='the dir to output the results')
+    path_settings.add_argument('--vector_file', default='../data/vectors.txt',
+                               help='pretrained vectors')
     path_settings.add_argument('--summary_dir', default='../data/summary/',
                                help='the dir to write tensorboard summary')
     path_settings.add_argument('--log_path',
@@ -133,7 +135,8 @@ def prepare(args):
                                                                             vocab.size()))
 
     logger.info('Assigning embeddings...')
-    vocab.randomly_init_embeddings(args.embed_size)
+    # vocab.randomly_init_embeddings(args.embed_size)
+    vocab.load_pretrained_embeddings(args.vector_file)
 
     logger.info('Saving vocab...')
     with open(os.path.join(args.vocab_dir, 'vocab.data'), 'wb') as fout:

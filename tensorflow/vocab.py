@@ -148,7 +148,8 @@ class Vocab(object):
         with open(embedding_path, 'r') as fin:
             for line in fin:
                 contents = line.strip().split()
-                token = contents[0].decode('utf8')
+                # token = contents[0].decode('utf8')
+                token = contents[0]
                 if token not in self.token2id:
                     continue
                 trained_embeddings[token] = list(map(float, contents[1:]))
