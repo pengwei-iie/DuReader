@@ -91,17 +91,17 @@ def parse_args():
     path_settings.add_argument('--test_files', nargs='+',
                                default=['../data/demo/testset/search.test.json'],
                                help='list of files that contain the preprocessed test data')
-    path_settings.add_argument('--brc_dir', default='../data/baidu',
+    path_settings.add_argument('--brc_dir', default='../baidu',
                                help='the dir with preprocessed baidu reading comprehension data')
-    path_settings.add_argument('--vocab_dir', default='../data/vocab/',
+    path_settings.add_argument('--vocab_dir', default='../vocab/',
                                help='the dir to save vocabulary')
-    path_settings.add_argument('--model_dir', default='../data/models_randseed1/',
+    path_settings.add_argument('--model_dir', default='../models_randseed1/',
                                help='the dir to store models')
-    path_settings.add_argument('--result_dir', default='../data/results/',
+    path_settings.add_argument('--result_dir', default='../results/',
                                help='the dir to output the results')
     path_settings.add_argument('--vector_file', default='../data/vectors.txt',
                                help='pretrained vectors')
-    path_settings.add_argument('--summary_dir', default='../data/summary/',
+    path_settings.add_argument('--summary_dir', default='../summary/',
                                help='the dir to write tensorboard summary')
     path_settings.add_argument('--log_path',
                                help='path of the log file. If not set, logs are printed to console')
