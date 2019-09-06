@@ -144,6 +144,7 @@ class Vocab(object):
         Args:
             embedding_path: the path of the pretrained embedding file
         """
+        print('load pretrain vectors')
         trained_embeddings = {}
         with open(embedding_path, 'r') as fin:
             for line in fin:
@@ -152,7 +153,8 @@ class Vocab(object):
                 token = contents[0]
                 if token not in self.token2id:
                     continue
-                trained_embeddings[token] = list(map(float, contents[1:]))
+                if isinstance(contents[1], float):
+                    trained_embeddings[token] = list(map(float, contents[1:]))
                 if self.embed_dim is None:
                     self.embed_dim = len(contents) - 1
         filtered_tokens = trained_embeddings.keys()
