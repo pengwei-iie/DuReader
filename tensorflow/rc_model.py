@@ -125,17 +125,14 @@ class RCModel(object):
         The embedding layer, question and passage share embeddings
         """
         with tf.device('/cpu:0'), tf.variable_scope('word_embedding'):
-            # self.word_embeddings = tf.get_variable(
-            #     'word_embeddings',
-            #     shape=(self.vocab.size(), self.vocab.embed_dim),
-            #     initializer=tf.constant_initializer(self.vocab.embeddings),
-            #     trainable=True
-            # )
-            # self.p_emb = tf.nn.embedding_lookup(self.word_embeddings, self.p['data'])
-            # self.q_emb = tf.nn.embedding_lookup(self.word_embeddings, self.q['data'])
-
-            self.p_emb = tf.nn.embedding_lookup(self.vocab.embeddings, self.p['data'])
-            self.q_emb = tf.nn.embedding_lookup(self.vocab.embeddings, self.q['data'])
+            self.word_embeddings = tf.get_variable(
+                'word_embeddings',
+                shape=(self.vocab.size(), self.vocab.embed_dim),
+                initializer=tf.constant_initializer(self.vocab.embeddings),
+                trainable=True
+            )
+            self.p_emb = tf.nn.embedding_lookup(self.word_embeddings, self.p['data'])
+            self.q_emb = tf.nn.embedding_lookup(self.word_embeddings, self.q['data'])
 
     # def fusion(self, old, new, name):
     #     # 连接特征
