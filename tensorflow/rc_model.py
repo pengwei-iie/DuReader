@@ -131,7 +131,7 @@ class RCModel(object):
             #     initializer=tf.constant_initializer(self.vocab.embeddings),
             #     trainable=True
             # )
-
+            self.vocab.embeddings = tf.cast(self.vocab.embeddings, tf.float32)
             self.p_emb = tf.nn.embedding_lookup(self.vocab.embeddings, self.p['data'])
             self.q_emb = tf.nn.embedding_lookup(self.vocab.embeddings, self.q['data'])
 
