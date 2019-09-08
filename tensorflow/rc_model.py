@@ -174,21 +174,11 @@ class RCModel(object):
             self.match_p_encodes = tf.nn.dropout(self.match_p_encodes, self.dropout_keep_prob)
             # self.match_q_encodes = tf.nn.dropout(self.match_q_encodes, self.dropout_keep_prob
 
-    def _fuse(self):
-        """
-        Employs Bi-LSTM again to fuse the context information after match layer
-        """
-        with tf.variable_scope('fusion_p'):
-            self.fuse_p_encodes, _ = rnn('bi-lstm', self.match_p_encodes, self.p_length,
-                                         self.hidden_size, layer_num=1)  # 经过双向RNN,变成前向+后向，150+150
-        if self.use_dropout:
-            self.fuse_p_encodes = tf.nn.dropout(self.fuse_p_encodes, self.dropout_keep_prob)
-
     def _self_attention(self):
         # 双线性softmax
         with tf.variable_scope('bi_linear'):
             # 经过双向lstm，最后一维变成300
-            batch_add5 = tf.shape(self.fuse_p_encodes)[0]
+            batch_add5 = tf.shape(self.match_p_encodes)[0]
 
             # use xavier initialization
 
@@ -196,15 +186,15 @@ class RCModel(object):
                                    initializer=tf.contrib.layers.xavier_initializer())
             # W_bi = tf.get_variable("W_bi", [self.hidden_size * 2, self.hidden_size * 2],
             #                        initializer=tf.random_normal_initializer(mean=0.0, stddev=0.1, seed=None, dtype=tf.float32))
-            tmp = tf.reshape(self.fuse_p_encodes, [-1, self.hidden_size*2])
+            tmp = tf.reshape(self.match_p_encodes, [-1, self.hidden_size*2])
             tmp = tf.matmul(tmp, W_bi)
             tmp = tf.reshape(tmp, [batch_add5, -1, self.hidden_size*2])
             # 以上就是通过reshape的方式进行双线性变化
-            before_softmax = tf.tanh(tf.matmul(tmp, self.fuse_p_encodes, transpose_b=True))     # b, n, n
+            before_softmax = tf.tanh(tf.matmul(tmp, self.match_p_encodes, transpose_b=True))     # b, n, n
             L = tfu.mask_softmax(before_softmax, self.p['mask'])
             # L = tf.nn.softmax(tf.matmul(tmp, self.fuse_p_encodes, transpose_b=True))
-            self.binear_passage = tf.matmul(L, self.fuse_p_encodes)
-            # self.binear_passage = tfu.fusion(self.fuse_p_encodes, self.binear_passage, self.hidden_size, name="binear")
+            self.binear_passage = tf.matmul(L, self.match_p_encodes)
+            self.binear_passage = tfu.fusion(self.match_p_encodes, self.binear_passage, self.hidden_size, name="binear")
 
             # 将最后一维变成self.hidden_size
             # self.binear_passage = tfu.dense(self.binear_passage, 1, "to_hidden_size")
@@ -214,13 +204,23 @@ class RCModel(object):
                                          self.hidden_size, layer_num=1)  # 经过双向RNN,变成前向+后向，150+150
 
         # 对问题操作,自对其，后续
-        W_q = tf.get_variable("W_q", [self.hidden_size * 2, self.hidden_size * 2],
-                               initializer=tf.contrib.layers.xavier_initializer())
-        tmp = tf.reshape(self.sep_q_encodes, [-1, self.hidden_size * 2])
-        tmp = tf.matmul(tmp, W_q)
-        tmp = tf.reshape(tmp, [batch_add5, -1, self.hidden_size * 2])   # b, q-len, hidden
-        alpha = tf.nn.softmax(tmp)      # b, n_q, 300
-        self.self_ques = alpha*self.sep_q_encodes
+        # W_q = tf.get_variable("W_q", [self.hidden_size * 2, self.hidden_size * 2],
+        #                        initializer=tf.contrib.layers.xavier_initializer())
+        # tmp = tf.reshape(self.sep_q_encodes, [-1, self.hidden_size * 2])
+        # tmp = tf.matmul(tmp, W_q)
+        # tmp = tf.reshape(tmp, [batch_add5, -1, self.hidden_size * 2])   # b, q-len, hidden
+        # alpha = tf.nn.softmax(tmp)      # b, n_q, 300
+        # self.self_ques = alpha*self.sep_q_encodes
+
+    def _fuse(self):
+        """
+        Employs Bi-LSTM again to fuse the context information after match layer
+        """
+        with tf.variable_scope('fusion_p'):
+            self.fina_passage, _ = rnn('bi-lstm', self.fina_passage, self.p_length,
+                                         self.hidden_size, layer_num=1)  # 经过双向RNN,变成前向+后向，150+150
+        if self.use_dropout:
+            self.fina_passage = tf.nn.dropout(self.fina_passage, self.dropout_keep_prob)
 
     def _decode(self):
         """
@@ -238,8 +238,8 @@ class RCModel(object):
 
             # b, 5, len_q, hidden       [0:, 0, 0:, 0:] 表示只用第一个问题，因为5个问题都是一样的
             no_dup_question_encodes = tf.reshape(
-                self.self_ques,
-                [batch_size, -1, tf.shape(self.self_ques)[1], 2 * self.hidden_size]
+                self.sep_q_encodes,
+                [batch_size, -1, tf.shape(self.sep_q_encodes)[1], 2 * self.hidden_size]
             )[0:, 0, 0:, 0:]
 
         decoder = PointerNetDecoder(self.hidden_size)
