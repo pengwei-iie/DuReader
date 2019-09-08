@@ -160,6 +160,7 @@ class Vocab(object):
         # rebuild the token x id map
         self.token2id = {}
         self.id2token = {}
+        print(len(trained_embeddings))
         for token in self.initial_tokens:
             self.add(token, cnt=0)
         for token in filtered_tokens:
