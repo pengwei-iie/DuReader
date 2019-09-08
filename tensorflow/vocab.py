@@ -148,10 +148,10 @@ class Vocab(object):
         with open(embedding_path, 'r') as fin:
             for line in fin:
                 contents = line.strip().split()
+                if len(contents) > 201:
+                    continue
                 token = contents[0]
                 if token not in self.token2id:
-                    continue
-                if not isinstance(contents[1], float):
                     continue
                 trained_embeddings[token] = list(map(float, contents[1:]))
                 if self.embed_dim is None:
