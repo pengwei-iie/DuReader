@@ -53,6 +53,7 @@ class RCModel(object):
         self.learning_rate = args.learning_rate
         self.weight_decay = args.weight_decay
         self.use_dropout = args.dropout_keep_prob < 1
+        self.dropout_keep_prob = args.dropout_keep_prob
 
         # length limit
         self.max_p_num = args.max_p_num
@@ -127,7 +128,7 @@ class RCModel(object):
         self.q_length = self.q['length']
         self.start_label = tf.placeholder(tf.int32, [None])
         self.end_label = tf.placeholder(tf.int32, [None])
-        self.dropout_keep_prob = tf.placeholder(tf.float32)
+        # self.dropout_keep_prob = tf.placeholder(tf.float32)
 
     def _embed(self):
         """
