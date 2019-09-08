@@ -84,7 +84,7 @@ def parse_args():
                                 help='transformer hidden')
     model_settings.add_argument('--layer', type=int, default=2,
                                 help='transformer layer')
-    model_settings.add_argument('--head', type=int, default=4,
+    model_settings.add_argument('--head', type=int, default=2,
                                 help='transformer head')
 
     path_settings = parser.add_argument_group('path settings')
