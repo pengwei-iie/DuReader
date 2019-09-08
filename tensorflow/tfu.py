@@ -756,8 +756,8 @@ def layer_norm(x, scope='', reuse=False, epsilon=1e-6):
             "scale", [filters], initializer=tf.ones_initializer())
         bias = tf.get_variable(
             "bias", [filters], initializer=tf.zeros_initializer())
-        mean = tf.reduce_mean(x, axis=[-1], keepdims=True)
-        variance = tf.reduce_mean(tf.square(x - mean), axis=[-1], keepdims=True)
+        mean = tf.reduce_mean(x, axis=[-1], keep_dims=True)
+        variance = tf.reduce_mean(tf.square(x - mean), axis=[-1], keep_dims=True)
         norm_x = (x - mean) * tf.rsqrt(variance + epsilon)
         return norm_x * scale + bias
 
