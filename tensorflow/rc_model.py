@@ -179,7 +179,7 @@ class RCModel(object):
         with tf.variable_scope('bi_linear'):
             # 经过双向lstm，最后一维变成300
             batch_add5 = tf.shape(self.match_p_encodes)[0]
-
+            self.match_p_encodes = tfu.dense(self.match_p_encodes, self.hidden_size * 2)
             # use xavier initialization
 
             W_bi = tf.get_variable("W_bi", [self.hidden_size * 2, self.hidden_size * 2],
