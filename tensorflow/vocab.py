@@ -151,7 +151,8 @@ class Vocab(object):
                 token = contents[0]
                 if token not in self.token2id:
                     continue
-                print(contents[1:2])
+                if not isinstance(contents[1], float):
+                    continue
                 trained_embeddings[token] = list(map(float, contents[1:]))
                 if self.embed_dim is None:
                     self.embed_dim = len(contents) - 1
