@@ -91,9 +91,9 @@ class RCModel(object):
         # self._fusion()
         self._encode()
         self._match()
-        self._fuse()
-        self._self_attention()
 
+        self._self_attention()
+        self._fuse()
         # self._self_attention()  # add self_attention
         self._decode()
         self._compute_loss()
