@@ -80,6 +80,12 @@ def parse_args():
                                 help='max length of question')
     model_settings.add_argument('--max_a_len', type=int, default=200,
                                 help='max length of answer')
+    model_settings.add_argument('--fully_hidden', type=int, default=512,
+                                help='transformer hidden')
+    model_settings.add_argument('--layer', type=int, default=2,
+                                help='transformer layer')
+    model_settings.add_argument('--head', type=int, default=4,
+                                help='transformer head')
 
     path_settings = parser.add_argument_group('path settings')
     path_settings.add_argument('--train_files', nargs='+',
