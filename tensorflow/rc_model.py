@@ -53,6 +53,7 @@ class RCModel(object):
         self.learning_rate = args.learning_rate
         self.weight_decay = args.weight_decay
         self.use_dropout = args.dropout_keep_prob < 1
+        self.dropout_keep_prob = args.dropout_keep_prob
 
         # length limit
         self.max_p_num = args.max_p_num
@@ -127,7 +128,7 @@ class RCModel(object):
         self.q_length = self.q['length']
         self.start_label = tf.placeholder(tf.int32, [None])
         self.end_label = tf.placeholder(tf.int32, [None])
-        self.dropout_keep_prob = tf.placeholder(tf.float32)
+        # self.dropout_keep_prob = tf.placeholder(tf.float32)
 
     def _embed(self):
         """
@@ -251,6 +252,11 @@ class RCModel(object):
             self.para_emb = self._single_encoder()  # 得到了所有段落的表示     batch5, num, hidden
             # self.sep_p_encodes, _ = rnn('bi-lstm', self.para_emb, self.p_length, self.hidden_size)  # 得到rnn的输出和状态
             self.fina_passage = tfu.dense(self.para_emb, self.hidden_size * 2, scope='transformer_linear')
+
+        with tf.variable_scope('transformer_lstm'):
+            self.fina_passage, _ = rnn('bi-lstm', self.fina_passage, self.p_length,
+                                       self.hidden_size, layer_num=1)
+        # self.binear_passage = tfu.fusion(self.fuse_p_encodes, self.binear_passage, self.hidden_size, name="binear")
         pass
 
     def _decode(self):
@@ -331,8 +337,7 @@ class RCModel(object):
                          self.p_length: batch['passage_length'],
                          self.q_length: batch['question_length'],
                          self.start_label: batch['start_id'],
-                         self.end_label: batch['end_id'],
-                         self.dropout_keep_prob: dropout_keep_prob}
+                         self.end_label: batch['end_id']}
             _, loss = self.sess.run([self.train_op, self.loss], feed_dict)
             total_loss += loss * len(batch['raw_data'])
             total_num += len(batch['raw_data'])
@@ -398,8 +403,7 @@ class RCModel(object):
                          self.p_length: batch['passage_length'],
                          self.q_length: batch['question_length'],
                          self.start_label: batch['start_id'],
-                         self.end_label: batch['end_id'],
-                         self.dropout_keep_prob: 1.0}
+                         self.end_label: batch['end_id']}
             start_probs, end_probs, loss = self.sess.run([self.start_probs,
                                                           self.end_probs, self.loss], feed_dict)
 
