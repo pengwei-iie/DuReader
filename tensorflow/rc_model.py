@@ -253,6 +253,11 @@ class RCModel(object):
             # self.sep_p_encodes, _ = rnn('bi-lstm', self.para_emb, self.p_length, self.hidden_size)  # 得到rnn的输出和状态
             self.fina_passage = tfu.dense(self.para_emb, self.hidden_size * 2, scope='transformer_linear')
 
+        with tf.variable_scope('transformer_lstm'):
+            self.fina_passage, _ = rnn('bi-lstm', self.fina_passage, self.p_length,
+                                       self.hidden_size, layer_num=1)
+        # self.binear_passage = tfu.fusion(self.fuse_p_encodes, self.binear_passage, self.hidden_size, name="binear")
+
         pass
 
     def _decode(self):
