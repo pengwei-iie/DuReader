@@ -134,12 +134,13 @@ class RCModel(object):
         """
         The embedding layer, question and passage share embeddings
         """
-        # self.vocab.embeddings = tf.cast(self.vocab.embeddings, tf.float32)
+        self.vocab.embeddings = tf.cast(self.vocab.embeddings, tf.float32)
         with tf.device('/cpu:0'), tf.variable_scope('word_embedding'):
             self.word_embeddings = tf.get_variable(
                 'word_embeddings',
                 shape=(self.vocab.size(), self.vocab.embed_dim),
-                initializer=tf.constant_initializer(self.vocab.embeddings),
+                # initializer=tf.constant_initializer(self.vocab.embeddings),
+                initializer= self.vocab.embeddings,
                 trainable=True
             )
             self.p_emb = tf.nn.embedding_lookup(self.word_embeddings, self.p['data'])
@@ -252,6 +253,8 @@ class RCModel(object):
             self.para_emb = self._single_encoder()  # 得到了所有段落的表示     batch5, num, hidden
             # self.sep_p_encodes, _ = rnn('bi-lstm', self.para_emb, self.p_length, self.hidden_size)  # 得到rnn的输出和状态
             self.fina_passage = tfu.dense(self.para_emb, self.hidden_size * 2, scope='transformer_linear')
+            # add fusion
+            self.fina_passage = tfu.fusion(self.fuse_p_encodes, self.fina_passage, self.hidden_size, name="binear")
 
         with tf.variable_scope('transformer_lstm'):
             self.fina_passage, _ = rnn('bi-lstm', self.fina_passage, self.p_length,
