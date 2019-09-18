@@ -20,7 +20,9 @@ This module implements data process strategies.
 
 import os
 import json
+import mmap
 import logging
+import linecache
 import numpy as np
 from collections import Counter
 
@@ -29,77 +31,80 @@ class BRCDataset(object):
     """
     This module implements the APIs for loading and using baidu reading comprehension dataset
     """
-    def __init__(self, max_p_num, max_p_len, max_q_len,
-                 train_files=[], dev_files=[], test_files=[]):
+    def __init__(self, max_p_num, max_p_len, max_q_len, vocab,
+                 train_files='', dev_files='', test_files=''):
         self.logger = logging.getLogger("brc")
         self.max_p_num = max_p_num
         self.max_p_len = max_p_len
         self.max_q_len = max_q_len
+        self.train_files = train_files
+        self.dev_files = dev_files
+        self.test_files = test_files
 
         self.train_set, self.dev_set, self.test_set = [], [], []
-        if train_files:
-            for train_file in train_files:
-                self.train_set += self._load_dataset(train_file, train=True)
-            self.logger.info('Train set size: {} questions.'.format(len(self.train_set)))
+        self.vocab = vocab
+        # if train_files:
+        #     for train_file in train_files:
+        #         self.train_set += self._load_dataset(train_file, train=True)
+        #     self.logger.info('Train set size: {} questions.'.format(len(self.train_set)))
+        #
+        # if dev_files:
+        #     for dev_file in dev_files:
+        #         self.dev_set += self._load_dataset(dev_file)
+        #     self.logger.info('Dev set size: {} questions.'.format(len(self.dev_set)))
+        #
+        # if test_files:
+        #     for test_file in test_files:
+        #         self.test_set += self._load_dataset(test_file)
+        #     self.logger.info('Test set size: {} questions.'.format(len(self.test_set)))
 
-        if dev_files:
-            for dev_file in dev_files:
-                self.dev_set += self._load_dataset(dev_file)
-            self.logger.info('Dev set size: {} questions.'.format(len(self.dev_set)))
-
-        if test_files:
-            for test_file in test_files:
-                self.test_set += self._load_dataset(test_file)
-            self.logger.info('Test set size: {} questions.'.format(len(self.test_set)))
-
-    def _load_dataset(self, data_path, train=False):
+    def _load_dataset(self, list, train=False):
         """
         Loads the dataset
         Args:
             data_path: the data file to load
         """
-        with open(data_path) as fin:
-            data_set = []
-            for lidx, line in enumerate(fin):   # 对每一个样本（多文档多段落）
-                sample = json.loads(line.strip())
-                if train:
-                    if len(sample['answer_spans']) == 0:
-                        continue
-                    if sample['answer_spans'][0][1] >= self.max_p_len:  # 对选出来的【【15, 65】】，过滤掉大于最大长度的文档
-                        continue
+        data_set = []
+        for lidx, line in enumerate(list):   # 对每一个样本（多文档多段落）
+            sample = json.loads(line.strip())
+            if train:
+                if len(sample['answer_spans']) == 0:
+                    continue
+                if sample['answer_spans'][0][1] >= self.max_p_len:  # 对选出来的【【15, 65】】，过滤掉大于最大长度的文档
+                    continue
 
-                if 'answer_docs' in sample:
-                    sample['answer_passages'] = sample['answer_docs']
+            if 'answer_docs' in sample:
+                sample['answer_passages'] = sample['answer_docs']
 
-                sample['question_tokens'] = sample['segmented_question']
+            sample['question_tokens'] = sample['segmented_question']
 
-                sample['passages'] = []
-                for d_idx, doc in enumerate(sample['documents']):   # 对每一篇文档处理,如果是训练，直接用最相关的段落；否则使用问题进行计算找到最相关的段落
-                    # if not doc['is_selected']:                      # fixme:prepare的时候不需要
-                    #     continue
-                    if train:                                       # 把被选择的和未被选择的最相关的段落都加到sample['passages']
-                        most_related_para = doc['most_related_para']
-                        sample['passages'].append(
-                            {'passage_tokens': doc['segmented_paragraphs'][most_related_para],
-                             'is_selected': doc['is_selected']}
-                        )
-                    else:
-                        para_infos = [] # 存的是段落，段落和问题的common在问题长度的占比，以及段落的长度
-                        for para_tokens in doc['segmented_paragraphs']: # 对一篇文章里的每一段
-                            question_tokens = sample['segmented_question']
-                            common_with_question = Counter(para_tokens) & Counter(question_tokens)
-                            correct_preds = sum(common_with_question.values())
-                            if correct_preds == 0:
-                                recall_wrt_question = 0
-                            else:
-                                recall_wrt_question = float(correct_preds) / len(question_tokens)
-                            para_infos.append((para_tokens, recall_wrt_question, len(para_tokens)))
-                        para_infos.sort(key=lambda x: (-x[1], x[2]))
-                        fake_passage_tokens = []
-                        for para_info in para_infos[:1]:    # 只取第一个最高的
-                            fake_passage_tokens += para_info[0]
-                        sample['passages'].append({'passage_tokens': fake_passage_tokens})  # 把最高的那个段落加到sample['passages']
-                data_set.append(sample)
+            sample['passages'] = []
+            for d_idx, doc in enumerate(sample['documents']):   # 对每一篇文档处理,如果是训练，直接用最相关的段落；否则使用问题进行计算找到最相关的段落
+                if not doc['is_selected']:                      # fixme:prepare的时候不需要
+                    continue
+                if train:                                       # 把被选择的和未被选择的最相关的段落都加到sample['passages']
+                    most_related_para = doc['most_related_para']
+                    sample['passages'].append(
+                        {'passage_tokens': doc['segmented_paragraphs'][most_related_para],
+                         'is_selected': doc['is_selected']}
+                    )
+                else:
+                    para_infos = [] # 存的是段落，段落和问题的common在问题长度的占比，以及段落的长度
+                    for para_tokens in doc['segmented_paragraphs']: # 对一篇文章里的每一段
+                        question_tokens = sample['segmented_question']
+                        common_with_question = Counter(para_tokens) & Counter(question_tokens)
+                        correct_preds = sum(common_with_question.values())
+                        if correct_preds == 0:
+                            recall_wrt_question = 0
+                        else:
+                            recall_wrt_question = float(correct_preds) / len(question_tokens)
+                        para_infos.append((para_tokens, recall_wrt_question, len(para_tokens)))
+                    para_infos.sort(key=lambda x: (-x[1], x[2]))
+                    fake_passage_tokens = []
+                    for para_info in para_infos[:1]:    # 只取第一个最高的
+                        fake_passage_tokens += para_info[0]
+                    sample['passages'].append({'passage_tokens': fake_passage_tokens})  # 把最高的那个段落加到sample['passages']
+            data_set.append(sample)
         return data_set
 
     def _one_mini_batch(self, data, indices, pad_id):
@@ -112,18 +117,23 @@ class BRCDataset(object):
         Returns:
             one batch of data
         """
-        batch_data = {'raw_data': [data[i] for i in indices],
+        # i 不能等0，没有第0行
+        batch_data = {'raw_data': [linecache.getline(data, i) for i in indices],
                       'question_token_ids': [],
                       'question_length': [],
                       'passage_token_ids': [],
                       'passage_length': [],
                       'start_id': [],
                       'end_id': []}
+        batch_data['raw_data'] = self._load_dataset(batch_data['raw_data'], train=True)
         max_passage_num = max([len(sample['passages']) for sample in batch_data['raw_data']])
         max_passage_num = min(self.max_p_num, max_passage_num)
         for sidx, sample in enumerate(batch_data['raw_data']):
             for pidx in range(max_passage_num):
                 if pidx < len(sample['passages']):
+                    sample['question_token_ids'] = self.vocab.convert_to_ids(sample['question_tokens'])
+                    for passage in sample['passages']:
+                        passage['passage_token_ids'] = self.vocab.convert_to_ids(passage['passage_tokens'])
                     batch_data['question_token_ids'].append(sample['question_token_ids'])
                     batch_data['question_length'].append(len(sample['question_token_ids']))
                     passage_token_ids = sample['passages'][pidx]['passage_token_ids']
@@ -198,6 +208,15 @@ class BRCDataset(object):
                 for passage in sample['passages']:
                     passage['passage_token_ids'] = vocab.convert_to_ids(passage['passage_tokens'])
 
+    def mapcount(self, filename):
+        f = open(filename, "r+")
+        buf = mmap.mmap(f.fileno(), 0)
+        lines = 0
+        readline = buf.readline
+        while readline():
+            lines += 1
+        return lines
+
     def gen_mini_batches(self, set_name, batch_size, pad_id, shuffle=True):
         """
         Generate data batches for a specific dataset (train/dev/test)
@@ -210,15 +229,15 @@ class BRCDataset(object):
             a generator for all batches
         """
         if set_name == 'train':
-            data = self.train_set
+            data = self.train_files
         elif set_name == 'dev':
-            data = self.dev_set
+            data = self.dev_files
         elif set_name == 'test':
-            data = self.test_set
+            data = self.test_files
         else:
             raise NotImplementedError('No data set named as {}'.format(set_name))
-        data_size = len(data)
-        indices = np.arange(data_size)
+        data_size = self.mapcount(data)
+        indices = np.arange(1, data_size+1)
         if shuffle:
             np.random.shuffle(indices)
         for batch_start in np.arange(0, data_size, batch_size):

@@ -100,9 +100,9 @@ class RCModel(object):
         self._encode()
         self._match()
         self._fuse()
-        # self._self_attention()
+        self._self_attention()
 
-        self._transformer()
+        # self._transformer()
         self._decode()
         self._compute_loss()
         # save info
@@ -134,13 +134,13 @@ class RCModel(object):
         """
         The embedding layer, question and passage share embeddings
         """
-        self.vocab.embeddings = tf.cast(self.vocab.embeddings, tf.float32)
+        # self.vocab.embeddings = tf.cast(self.vocab.embeddings, tf.float32)
         with tf.device('/cpu:0'), tf.variable_scope('word_embedding'):
             self.word_embeddings = tf.get_variable(
                 'word_embeddings',
                 shape=(self.vocab.size(), self.vocab.embed_dim),
-                # initializer=tf.constant_initializer(self.vocab.embeddings),
-                initializer= self.vocab.embeddings,
+                initializer=tf.constant_initializer(self.vocab.embeddings),
+                # initializer= self.vocab.embeddings,
                 trainable=True
             )
             self.p_emb = tf.nn.embedding_lookup(self.word_embeddings, self.p['data'])
@@ -194,34 +194,34 @@ class RCModel(object):
         if self.use_dropout:
             self.fuse_p_encodes = tf.nn.dropout(self.fuse_p_encodes, self.dropout_keep_prob)
 
-    # def _self_attention(self):
-    #     # 双线性softmax
-    #     with tf.variable_scope('bi_linear'):
-    #         # 经过双向lstm，最后一维变成300
-    #         batch_add5 = tf.shape(self.fuse_p_encodes)[0]
-    #
-    #         # use xavier initialization
-    #
-    #         W_bi = tf.get_variable("W_bi", [self.hidden_size * 2, self.hidden_size * 2],
-    #                                initializer=tf.contrib.layers.xavier_initializer())
-    #         # W_bi = tf.get_variable("W_bi", [self.hidden_size * 2, self.hidden_size * 2],
-    #         #                        initializer=tf.random_normal_initializer(mean=0.0, stddev=0.1, seed=None, dtype=tf.float32))
-    #         tmp = tf.reshape(self.fuse_p_encodes, [-1, self.hidden_size*2])
-    #         tmp = tf.matmul(tmp, W_bi)
-    #         tmp = tf.reshape(tmp, [batch_add5, -1, self.hidden_size*2])
-    #         # 以上就是通过reshape的方式进行双线性变化
-    #         before_softmax = tf.tanh(tf.matmul(tmp, self.fuse_p_encodes, transpose_b=True))     # b, n, n
-    #         L = tfu.mask_softmax(before_softmax, self.p['mask'])
-    #         # L = tf.nn.softmax(tf.matmul(tmp, self.fuse_p_encodes, transpose_b=True))
-    #         self.binear_passage = tf.matmul(L, self.fuse_p_encodes)
-    #         self.binear_passage = tfu.fusion(self.fuse_p_encodes, self.binear_passage, self.hidden_size, name="binear")
-    #
-    #         # 将最后一维变成self.hidden_size
-    #         # self.binear_passage = tfu.dense(self.binear_passage, 1, "to_hidden_size")
-    #         # 需要再经过一个双向LISTM
-    #     with tf.variable_scope('self_attention'):
-    #         self.fina_passage, _ = rnn('bi-lstm', self.binear_passage, self.p_length,
-    #                                      self.hidden_size, layer_num=1)  # 经过双向RNN,变成前向+后向，150+150
+    def _self_attention(self):
+        # 双线性softmax
+        with tf.variable_scope('bi_linear'):
+            # 经过双向lstm，最后一维变成300
+            batch_add5 = tf.shape(self.fuse_p_encodes)[0]
+
+            # use xavier initialization
+
+            W_bi = tf.get_variable("W_bi", [self.hidden_size * 2, self.hidden_size * 2],
+                                   initializer=tf.contrib.layers.xavier_initializer())
+            # W_bi = tf.get_variable("W_bi", [self.hidden_size * 2, self.hidden_size * 2],
+            #                        initializer=tf.random_normal_initializer(mean=0.0, stddev=0.1, seed=None, dtype=tf.float32))
+            tmp = tf.reshape(self.fuse_p_encodes, [-1, self.hidden_size*2])
+            tmp = tf.matmul(tmp, W_bi)
+            tmp = tf.reshape(tmp, [batch_add5, -1, self.hidden_size*2])
+            # 以上就是通过reshape的方式进行双线性变化
+            before_softmax = tf.tanh(tf.matmul(tmp, self.fuse_p_encodes, transpose_b=True))     # b, n, n
+            L = tfu.mask_softmax(before_softmax, self.p['mask'])
+            # L = tf.nn.softmax(tf.matmul(tmp, self.fuse_p_encodes, transpose_b=True))
+            self.binear_passage = tf.matmul(L, self.fuse_p_encodes)
+            # self.binear_passage = tfu.fusion(self.fuse_p_encodes, self.binear_passage, self.hidden_size, name="binear")
+
+            # 将最后一维变成self.hidden_size
+            # self.binear_passage = tfu.dense(self.binear_passage, 1, "to_hidden_size")
+            # 需要再经过一个双向LISTM
+        with tf.variable_scope('self_attention'):
+            self.fina_passage, _ = rnn('bi-lstm', self.binear_passage, self.p_length,
+                                         self.hidden_size, layer_num=1)  # 经过双向RNN,变成前向+后向，150+150
 
         # 对问题操作,自对其，后续
         # W_q = tf.get_variable("W_q", [self.hidden_size * 2, self.hidden_size * 2],
@@ -232,36 +232,36 @@ class RCModel(object):
         # alpha = tf.nn.softmax(tmp)      # b, n_q, 300
         # self.self_ques = alpha*self.sep_q_encodes
 
-    def _single_encoder(self, reuse=False):
-        with tf.variable_scope('paragraph_encoder', reuse=reuse):
-            hidden, layers, heads, ffd_hidden = self.hidden_size, self.layer, self.head, self.fully_hidden
-            # self.p_emb = tfu.dense(tf.concat([self.p_emb, self.p_pos_embed], axis=2), self.hidden_size, scope='p_pos')
-            sent = tfu.add_timing_signal(self.fuse_p_encodes)
-            # sent = tfu.dropout(sent, self._kprob, self._is_train)
-            trans = tfu.TransformerEncoder(hidden=hidden, layers=layers, heads=heads, ffd_hidden=ffd_hidden,
-                                           keep_prob=self.dropout_keep_prob, is_train=self.is_train,
-                                           scope='paragraph_trans')
-            sent_emb = trans(sent, self.p['mask'])  # batch5, num, 256
-            return sent_emb
-
-    def _transformer(self):
-        with tf.variable_scope("paragraph_encoder"):
-            # word_num = tf.shape(self.p_emb)[1]
-            # emb_h = self.p_emb.shape.as_list()[-1]
-            # sent = tf.reshape(emb, [self._batch * sent_num, word_num, emb_h])
-            # sent_mask = tf.reshape(mask, [self._batch * sent_num, word_num])
-            self.para_emb = self._single_encoder()  # 得到了所有段落的表示     batch5, num, hidden
-            # self.sep_p_encodes, _ = rnn('bi-lstm', self.para_emb, self.p_length, self.hidden_size)  # 得到rnn的输出和状态
-            self.fina_passage = tfu.dense(self.para_emb, self.hidden_size * 2, scope='transformer_linear')
-            # add fusion
-            self.fina_passage = tfu.fusion(self.fuse_p_encodes, self.fina_passage, self.hidden_size, name="binear")
-
-        with tf.variable_scope('transformer_lstm'):
-            self.fina_passage, _ = rnn('bi-lstm', self.fina_passage, self.p_length,
-                                       self.hidden_size, layer_num=1)
-        # self.binear_passage = tfu.fusion(self.fuse_p_encodes, self.binear_passage, self.hidden_size, name="binear")
-
-        pass
+    # def _single_encoder(self, reuse=False):
+    #     with tf.variable_scope('paragraph_encoder', reuse=reuse):
+    #         hidden, layers, heads, ffd_hidden = self.hidden_size, self.layer, self.head, self.fully_hidden
+    #         # self.p_emb = tfu.dense(tf.concat([self.p_emb, self.p_pos_embed], axis=2), self.hidden_size, scope='p_pos')
+    #         sent = tfu.add_timing_signal(self.fuse_p_encodes)
+    #         # sent = tfu.dropout(sent, self._kprob, self._is_train)
+    #         trans = tfu.TransformerEncoder(hidden=hidden, layers=layers, heads=heads, ffd_hidden=ffd_hidden,
+    #                                        keep_prob=self.dropout_keep_prob, is_train=self.is_train,
+    #                                        scope='paragraph_trans')
+    #         sent_emb = trans(sent, self.p['mask'])  # batch5, num, 256
+    #         return sent_emb
+    #
+    # def _transformer(self):
+    #     with tf.variable_scope("paragraph_encoder"):
+    #         # word_num = tf.shape(self.p_emb)[1]
+    #         # emb_h = self.p_emb.shape.as_list()[-1]
+    #         # sent = tf.reshape(emb, [self._batch * sent_num, word_num, emb_h])
+    #         # sent_mask = tf.reshape(mask, [self._batch * sent_num, word_num])
+    #         self.para_emb = self._single_encoder()  # 得到了所有段落的表示     batch5, num, hidden
+    #         # self.sep_p_encodes, _ = rnn('bi-lstm', self.para_emb, self.p_length, self.hidden_size)  # 得到rnn的输出和状态
+    #         self.fina_passage = tfu.dense(self.para_emb, self.hidden_size * 2, scope='transformer_linear')
+    #         # add fusion
+    #         # self.fina_passage = tfu.fusion(self.fuse_p_encodes, self.fina_passage, self.hidden_size, name="binear")
+    #
+    #     with tf.variable_scope('transformer_lstm'):
+    #         self.fina_passage, _ = rnn('bi-lstm', self.fina_passage, self.p_length,
+    #                                    self.hidden_size, layer_num=1)
+    #     # self.binear_passage = tfu.fusion(self.fuse_p_encodes, self.binear_passage, self.hidden_size, name="binear")
+    #
+    #     pass
 
     def _decode(self):
         """
@@ -335,7 +335,7 @@ class RCModel(object):
         """
         total_num, total_loss = 0, 0
         log_every_n_batch, n_batch_loss = 50, 0
-        for bitx, batch in enumerate(train_batches, 1):
+        for bitx, batch in enumerate(train_batches, 1):     # 这里才开始真正使用train_batches， 每次调用batch size个
             feed_dict = {self.p['data']: batch['passage_token_ids'],
                          self.q['data']: batch['question_token_ids'],
                          self.p_length: batch['passage_length'],
@@ -368,8 +368,9 @@ class RCModel(object):
         pad_id = self.vocab.get_id(self.vocab.pad_token)
         max_bleu_4 = 0
         for epoch in range(1, epochs + 1):
+
             self.logger.info('Training the model for epoch {}'.format(epoch))
-            train_batches = data.gen_mini_batches('train', batch_size, pad_id, shuffle=True)
+            train_batches = data.gen_mini_batches('train', batch_size, pad_id, shuffle=True)    # 定义一个生成器
             train_loss = self._train_epoch(train_batches, dropout_keep_prob)
             self.logger.info('Average train loss for epoch {} is {}'.format(epoch, train_loss))
 
