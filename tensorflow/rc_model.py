@@ -326,15 +326,17 @@ class RCModel(object):
             raise NotImplementedError('Unsupported optimizer: {}'.format(self.optim_type))
         self.train_op = self.optimizer.minimize(self.loss)
 
-    def _train_epoch(self, train_batches, dropout_keep_prob):
+    def _train_epoch(self, train_batches, dropout_keep_prob, epoch, data, batch_size,
+                     save_dir, save_prefix, rand_seed, max_bleu_4):
         """
         Trains the model for a single epoch.
         Args:
             train_batches: iterable batch data for training
             dropout_keep_prob: float value indicating dropout keep probability
         """
+        pad_id = self.vocab.get_id(self.vocab.pad_token)
         total_num, total_loss = 0, 0
-        log_every_n_batch, n_batch_loss = 50, 0
+        log_every_n_batch, n_batch_loss = 100, 0
         for bitx, batch in enumerate(train_batches, 1):     # 这里才开始真正使用train_batches， 每次调用batch size个
             feed_dict = {self.p['data']: batch['passage_token_ids'],
                          self.q['data']: batch['question_token_ids'],
@@ -350,6 +352,20 @@ class RCModel(object):
                 self.logger.info('Average loss from batch {} to {} is {}'.format(
                     bitx - log_every_n_batch + 1, bitx, n_batch_loss / log_every_n_batch))
                 n_batch_loss = 0
+
+                self.logger.info('Evaluating the model after epoch {} iters {}'.format(epoch, bitx))
+                if data.dev_files is not None:
+                    eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False)
+                    eval_loss, bleu_rouge = self.evaluate(eval_batches)
+                    self.logger.info('Dev eval loss {}'.format(eval_loss))
+                    self.logger.info('Dev eval result: {}'.format(bleu_rouge))
+
+                    if bleu_rouge['Bleu-4'] > max_bleu_4:
+                        self.save(save_dir, save_prefix, rand_seed)
+                        max_bleu_4 = bleu_rouge['Bleu-4']
+                else:
+                    self.logger.warning('No dev set is loaded for evaluation in the dataset!')
+
         return 1.0 * total_loss / total_num
 
     def train(self, data, epochs, batch_size, save_dir, save_prefix, rand_seed,
@@ -371,12 +387,13 @@ class RCModel(object):
 
             self.logger.info('Training the model for epoch {}'.format(epoch))
             train_batches = data.gen_mini_batches('train', batch_size, pad_id, shuffle=True)    # 定义一个生成器
-            train_loss = self._train_epoch(train_batches, dropout_keep_prob)
+            train_loss = self._train_epoch(train_batches, dropout_keep_prob, epoch, data, batch_size,
+                                           save_dir, save_prefix, rand_seed, max_bleu_4)
             self.logger.info('Average train loss for epoch {} is {}'.format(epoch, train_loss))
 
             if evaluate:
                 self.logger.info('Evaluating the model after epoch {}'.format(epoch))
-                if data.dev_set is not None:
+                if data.dev_files is not None:
                     eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False)
                     eval_loss, bleu_rouge = self.evaluate(eval_batches)
                     self.logger.info('Dev eval loss {}'.format(eval_loss))
