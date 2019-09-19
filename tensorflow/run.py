@@ -88,13 +88,13 @@ def parse_args():
                                 help='transformer head')
 
     path_settings = parser.add_argument_group('path settings')
-    path_settings.add_argument('--train_files', nargs='+',
+    path_settings.add_argument('--train_files',
                                default='../data/demo/trainset/search.train.json',
                                help='list of files that contain the preprocessed train data')
-    path_settings.add_argument('--dev_files', nargs='+',
+    path_settings.add_argument('--dev_files',
                                default='../data/demo/devset/search.dev.json',
                                help='list of files that contain the preprocessed dev data')
-    path_settings.add_argument('--test_files', nargs='+',
+    path_settings.add_argument('--test_files',
                                default='../data/demo/testset/search.test.json',
                                help='list of files that contain the preprocessed test data')
     path_settings.add_argument('--brc_dir', default='../data/baidu',
