@@ -88,16 +88,16 @@ def parse_args():
                                 help='transformer head')
 
     path_settings = parser.add_argument_group('path settings')
-    path_settings.add_argument('--train_files',
-                               default='../data/demo/trainset/search.train.json',
+    path_settings.add_argument('--train_files', nargs='+',
+                               default=['../data/demo/trainset/search.train.json'],
                                help='list of files that contain the preprocessed train data')
-    path_settings.add_argument('--dev_files',
-                               default='../data/demo/devset/search.dev.json',
+    path_settings.add_argument('--dev_files', nargs='+',
+                               default=['../data/demo/devset/search.dev.json'],
                                help='list of files that contain the preprocessed dev data')
-    path_settings.add_argument('--test_files',
-                               default='../data/demo/testset/search.test.json',
+    path_settings.add_argument('--test_files', nargs='+',
+                               default=['../data/demo/testset/search.test.json'],
                                help='list of files that contain the preprocessed test data')
-    path_settings.add_argument('--brc_dir', default='../data/baidu',
+    path_settings.add_argument('--brc_dir', default='../baidu',
                                help='the dir with preprocessed baidu reading comprehension data')
     path_settings.add_argument('--vocab_dir', default='../vocab/',
                                help='the dir to save vocabulary')
@@ -139,8 +139,8 @@ def prepare(args):
                                                                             vocab.size()))
 
     logger.info('Assigning embeddings...')
-    vocab.randomly_init_embeddings(args.embed_size)
-    # vocab.load_pretrained_embeddings('../data/Tencent_AILab_ChineseEmbedding.txt')
+    # vocab.randomly_init_embeddings(args.embed_size)
+    vocab.load_pretrained_embeddings('../data/Tencent_AILab_ChineseEmbedding.txt')
     logger.info('Saving vocab...')
     with open(os.path.join(args.vocab_dir, 'vocab.data'), 'wb') as fout:
         pickle.dump(vocab, fout)
@@ -160,10 +160,10 @@ def train(args):
     logger.info('Load data_set and vocab...')
     with open(os.path.join(args.vocab_dir, 'vocab.data'), 'rb') as fin:
         vocab = pickle.load(fin)
-    brc_data = BRCDataset(args.max_p_num, args.max_p_len, args.max_q_len, vocab,
-                          args.train_files, args.dev_files)     # 5, 500, 60.训练的时候不需要测试集
-    # logger.info('Converting text into ids...')
-    # brc_data.convert_to_ids(vocab)
+    print(args.train_files)
+    brc_data = BRCDataset(args.max_p_num, args.max_p_len, args.max_q_len, args.train_files, args.dev_files)     # 5, 500, 60.训练的时候不需要测试集
+    logger.info('Converting text into ids...')
+    brc_data.convert_to_ids(vocab)
     logger.info('Initialize the model...')
     rc_model = RCModel(vocab, args)
 

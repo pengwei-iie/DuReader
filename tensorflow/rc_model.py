@@ -354,7 +354,7 @@ class RCModel(object):
                 n_batch_loss = 0
 
                 self.logger.info('Evaluating the model after epoch {} iters {}'.format(epoch, bitx))
-                if data.dev_files is not None:
+                if data.dev_set is not None:
                     eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False)
                     eval_loss, bleu_rouge = self.evaluate(eval_batches)
                     self.logger.info('Dev eval loss {}'.format(eval_loss))
@@ -393,7 +393,7 @@ class RCModel(object):
 
             if evaluate:
                 self.logger.info('Evaluating the model after epoch {}'.format(epoch))
-                if data.dev_files is not None:
+                if data.dev_set is not None:
                     eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False)
                     eval_loss, bleu_rouge = self.evaluate(eval_batches)
                     self.logger.info('Dev eval loss {}'.format(eval_loss))
