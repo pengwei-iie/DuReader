@@ -352,19 +352,20 @@ class RCModel(object):
                 self.logger.info('Average loss from batch {} to {} is {}'.format(
                     bitx - log_every_n_batch + 1, bitx, n_batch_loss / log_every_n_batch))
                 n_batch_loss = 0
+                
+                if bitx % 800 == 0:
+                    self.logger.info('Evaluating the model after epoch {} iters {}'.format(epoch, bitx))
+                    if data.dev_set is not None:
+                        eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False)
+                        eval_loss, bleu_rouge = self.evaluate(eval_batches)
+                        self.logger.info('Dev eval loss {}'.format(eval_loss))
+                        self.logger.info('Dev eval result: {}'.format(bleu_rouge))
 
-                self.logger.info('Evaluating the model after epoch {} iters {}'.format(epoch, bitx))
-                if data.dev_set is not None:
-                    eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False)
-                    eval_loss, bleu_rouge = self.evaluate(eval_batches)
-                    self.logger.info('Dev eval loss {}'.format(eval_loss))
-                    self.logger.info('Dev eval result: {}'.format(bleu_rouge))
-
-                    if bleu_rouge['Bleu-4'] > max_bleu_4:
-                        self.save(save_dir, save_prefix, rand_seed)
-                        max_bleu_4 = bleu_rouge['Bleu-4']
-                else:
-                    self.logger.warning('No dev set is loaded for evaluation in the dataset!')
+                        if bleu_rouge['Bleu-4'] > max_bleu_4:
+                            self.save(save_dir, save_prefix, rand_seed)
+                            max_bleu_4 = bleu_rouge['Bleu-4']
+                    else:
+                        self.logger.warning('No dev set is loaded for evaluation in the dataset!')
 
         return 1.0 * total_loss / total_num
 
