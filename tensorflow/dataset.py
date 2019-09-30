@@ -80,8 +80,8 @@ class BRCDataset(object):
 
             sample['passages'] = []
             for d_idx, doc in enumerate(sample['documents']):   # 对每一篇文档处理,如果是训练，直接用最相关的段落；否则使用问题进行计算找到最相关的段落
-                if not doc['is_selected']:                      # fixme:prepare的时候不需要
-                    continue
+                # if not doc['is_selected']:                      # fixme:prepare的时候不需要
+                #     continue
                 if train:                                       # 把被选择的和未被选择的最相关的段落都加到sample['passages']
                     most_related_para = doc['most_related_para']
                     sample['passages'].append(
@@ -132,11 +132,12 @@ class BRCDataset(object):
             for pidx in range(max_passage_num):
                 if pidx < len(sample['passages']):
                     sample['question_token_ids'] = self.vocab.convert_to_ids(sample['question_tokens'])
-                    for passage in sample['passages']:
-                        passage['passage_token_ids'] = self.vocab.convert_to_ids(passage['passage_tokens'])
+
+                    # for passage in sample['passages']:
+                    #     passage['passage_token_ids'] = self.vocab.convert_to_ids(passage['passage_tokens'])
                     batch_data['question_token_ids'].append(sample['question_token_ids'])
                     batch_data['question_length'].append(len(sample['question_token_ids']))
-                    passage_token_ids = sample['passages'][pidx]['passage_token_ids']
+                    passage_token_ids = self.vocab.convert_to_ids(sample['passages'][pidx]['passage_tokens'])
                     batch_data['passage_token_ids'].append(passage_token_ids)
                     batch_data['passage_length'].append(min(len(passage_token_ids), self.max_p_len))
                 else:
@@ -215,6 +216,7 @@ class BRCDataset(object):
         readline = buf.readline
         while readline():
             lines += 1
+        f.close()
         return lines
 
     def gen_mini_batches(self, set_name, batch_size, pad_id, shuffle=True):
@@ -236,7 +238,8 @@ class BRCDataset(object):
             data = self.test_files
         else:
             raise NotImplementedError('No data set named as {}'.format(set_name))
-        data_size = self.mapcount(data)
+        # data_size = self.mapcount(data)
+        data_size = len(linecache.getlines(data))
         indices = np.arange(1, data_size+1)
         if shuffle:
             np.random.shuffle(indices)

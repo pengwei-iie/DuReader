@@ -89,10 +89,10 @@ def parse_args():
 
     path_settings = parser.add_argument_group('path settings')
     path_settings.add_argument('--train_files',
-                               default='../data/demo/trainset/search.train.json',
+                               default='../data/demo/trainset/zhidao.train.json',
                                help='list of files that contain the preprocessed train data')
     path_settings.add_argument('--dev_files',
-                               default='../data/demo/devset/search.dev.json',
+                               default='../data/demo/devset/zhidao.dev.json',
                                help='list of files that contain the preprocessed dev data')
     path_settings.add_argument('--test_files',
                                default='../data/demo/testset/search.test.json',
@@ -101,11 +101,11 @@ def parse_args():
                                help='the dir with preprocessed baidu reading comprehension data')
     path_settings.add_argument('--vocab_dir', default='../vocab/',
                                help='the dir to save vocabulary')
-    path_settings.add_argument('--model_dir', default='../data/models_randseed1/',
+    path_settings.add_argument('--model_dir', default='../models/',
                                help='the dir to store models')
     path_settings.add_argument('--result_dir', default='../data/results/',
                                help='the dir to output the results')
-    path_settings.add_argument('--summary_dir', default='../data/summary/',
+    path_settings.add_argument('--summary_dir', default='../summary/',
                                help='the dir to write tensorboard summary')
     path_settings.add_argument('--log_path',
                                help='path of the log file. If not set, logs are printed to console')
@@ -187,7 +187,7 @@ def evaluate(args):
     with open(os.path.join(args.vocab_dir, 'vocab.data'), 'rb') as fin:
         vocab = pickle.load(fin)
     assert len(args.dev_files) > 0, 'No dev files are provided.'
-    brc_data = BRCDataset(args.max_p_num, args.max_p_len, args.max_q_len, dev_files=args.dev_files)
+    brc_data = BRCDataset(args.max_p_num, args.max_p_len, args.max_q_len, vocab, dev_files=args.dev_files)
     logger.info('Converting text into ids...')
     brc_data.convert_to_ids(vocab)
     logger.info('Restoring the model...')

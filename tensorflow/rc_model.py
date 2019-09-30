@@ -102,7 +102,7 @@ class RCModel(object):
         self._fuse()
         # self._self_attention()
 
-        self._transformer()
+        # self._transformer()
         self._decode()
         self._compute_loss()
         # save info
@@ -232,33 +232,33 @@ class RCModel(object):
         # alpha = tf.nn.softmax(tmp)      # b, n_q, 300
         # self.self_ques = alpha*self.sep_q_encodes
 
-    def _single_encoder(self, reuse=False):
-        with tf.variable_scope('paragraph_encoder', reuse=reuse):
-            hidden, layers, heads, ffd_hidden = self.hidden_size, self.layer, self.head, self.fully_hidden
-            # self.p_emb = tfu.dense(tf.concat([self.p_emb, self.p_pos_embed], axis=2), self.hidden_size, scope='p_pos')
-            sent = tfu.add_timing_signal(self.fuse_p_encodes)
-            # sent = tfu.dropout(sent, self._kprob, self._is_train)
-            trans = tfu.TransformerEncoder(hidden=hidden, layers=layers, heads=heads, ffd_hidden=ffd_hidden,
-                                           keep_prob=self.dropout_keep_prob, is_train=self.is_train,
-                                           scope='paragraph_trans')
-            sent_emb = trans(sent, self.p['mask'])  # batch5, num, 256
-            return sent_emb
-
-    def _transformer(self):
-        with tf.variable_scope("paragraph_encoder"):
-            # word_num = tf.shape(self.p_emb)[1]
-            # emb_h = self.p_emb.shape.as_list()[-1]
-            # sent = tf.reshape(emb, [self._batch * sent_num, word_num, emb_h])
-            # sent_mask = tf.reshape(mask, [self._batch * sent_num, word_num])
-            self.para_emb = self._single_encoder()  # 得到了所有段落的表示     batch5, num, hidden
-            # self.sep_p_encodes, _ = rnn('bi-lstm', self.para_emb, self.p_length, self.hidden_size)  # 得到rnn的输出和状态
-            self.fina_passage = tfu.dense(self.para_emb, self.hidden_size * 2, scope='transformer_linear')
-            # add fusion
-            # self.fina_passage = tfu.fusion(self.fuse_p_encodes, self.fina_passage, self.hidden_size, name="binear")
-
-        with tf.variable_scope('transformer_lstm'):
-            self.fina_passage, _ = rnn('bi-lstm', self.fina_passage, self.p_length,
-                                       self.hidden_size, layer_num=1)
+    # def _single_encoder(self, reuse=False):
+    #     with tf.variable_scope('paragraph_encoder', reuse=reuse):
+    #         hidden, layers, heads, ffd_hidden = self.hidden_size, self.layer, self.head, self.fully_hidden
+    #         # self.p_emb = tfu.dense(tf.concat([self.p_emb, self.p_pos_embed], axis=2), self.hidden_size, scope='p_pos')
+    #         sent = tfu.add_timing_signal(self.fuse_p_encodes)
+    #         # sent = tfu.dropout(sent, self._kprob, self._is_train)
+    #         trans = tfu.TransformerEncoder(hidden=hidden, layers=layers, heads=heads, ffd_hidden=ffd_hidden,
+    #                                        keep_prob=self.dropout_keep_prob, is_train=self.is_train,
+    #                                        scope='paragraph_trans')
+    #         sent_emb = trans(sent, self.p['mask'])  # batch5, num, 256
+    #         return sent_emb
+    #
+    # def _transformer(self):
+    #     with tf.variable_scope("paragraph_encoder"):
+    #         # word_num = tf.shape(self.p_emb)[1]
+    #         # emb_h = self.p_emb.shape.as_list()[-1]
+    #         # sent = tf.reshape(emb, [self._batch * sent_num, word_num, emb_h])
+    #         # sent_mask = tf.reshape(mask, [self._batch * sent_num, word_num])
+    #         self.para_emb = self._single_encoder()  # 得到了所有段落的表示     batch5, num, hidden
+    #         # self.sep_p_encodes, _ = rnn('bi-lstm', self.para_emb, self.p_length, self.hidden_size)  # 得到rnn的输出和状态
+    #         self.fina_passage = tfu.dense(self.para_emb, self.hidden_size * 2, scope='transformer_linear')
+    #         # add fusion
+    #         # self.fina_passage = tfu.fusion(self.fuse_p_encodes, self.fina_passage, self.hidden_size, name="binear")
+    #
+    #     with tf.variable_scope('transformer_lstm'):
+    #         self.fina_passage, _ = rnn('bi-lstm', self.fina_passage, self.p_length,
+    #                                    self.hidden_size, layer_num=1)
         # self.binear_passage = tfu.fusion(self.fuse_p_encodes, self.binear_passage, self.hidden_size, name="binear")
 
         pass
@@ -273,7 +273,7 @@ class RCModel(object):
         with tf.variable_scope('same_question_concat'):
             batch_size = tf.shape(self.start_label)[0]
             concat_passage_encodes = tf.reshape(
-                self.fina_passage,
+                self.fuse_p_encodes,
                 [batch_size, -1, 2 * self.hidden_size]
             )       # fina_passage: b*5, len_p, hidden --> b, 5*len_p, hidden
 
