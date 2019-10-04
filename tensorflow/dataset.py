@@ -107,7 +107,7 @@ class BRCDataset(object):
             data_set.append(sample)
         return data_set
 
-    def _one_mini_batch(self, data, indices, pad_id):
+    def _one_mini_batch(self, data, indices, pad_id, training):
         """
         Get one mini batch
         Args:
@@ -125,7 +125,7 @@ class BRCDataset(object):
                       'passage_length': [],
                       'start_id': [],
                       'end_id': []}
-        batch_data['raw_data'] = self._load_dataset(batch_data['raw_data'], train=True)
+        batch_data['raw_data'] = self._load_dataset(batch_data['raw_data'], training)
         max_passage_num = max([len(sample['passages']) for sample in batch_data['raw_data']])
         max_passage_num = min(self.max_p_num, max_passage_num)
         for sidx, sample in enumerate(batch_data['raw_data']):
@@ -219,7 +219,7 @@ class BRCDataset(object):
         f.close()
         return lines
 
-    def gen_mini_batches(self, set_name, batch_size, pad_id, shuffle=True):
+    def gen_mini_batches(self, set_name, batch_size, pad_id, shuffle=True, training=False):
         """
         Generate data batches for a specific dataset (train/dev/test)
         Args:
@@ -245,4 +245,4 @@ class BRCDataset(object):
             np.random.shuffle(indices)
         for batch_start in np.arange(0, data_size, batch_size):
             batch_indices = indices[batch_start: batch_start + batch_size]
-            yield self._one_mini_batch(data, batch_indices, pad_id)
+            yield self._one_mini_batch(data, batch_indices, pad_id, training)
