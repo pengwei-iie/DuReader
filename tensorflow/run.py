@@ -160,8 +160,8 @@ def train(args):
     logger.info('Load data_set and vocab...')
     with open(os.path.join(args.vocab_dir, 'vocab.data'), 'rb') as fin:
         vocab = pickle.load(fin)
-    brc_data = BRCDataset(args.max_p_num, args.max_p_len, args.max_q_len, vocab,
-                          args.train_files, args.dev_files)     # 5, 500, 60.训练的时候不需要测试集
+    brc_data = BRCDataset(args.max_p_num, args.max_p_len, args.max_q_len,
+                          vocab, args.train_files, args.dev_files)     # 5, 500, 60.训练的时候不需要测试集
     # logger.info('Converting text into ids...')
     # brc_data.convert_to_ids(vocab)
     logger.info('Initialize the model...')

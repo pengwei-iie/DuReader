@@ -354,8 +354,8 @@ class RCModel(object):
                 n_batch_loss = 0
                 if bitx % 800 == 0:
                     self.logger.info('Evaluating the model after epoch {} iters {}'.format(epoch, bitx))
-                    if data.dev_files is not None:
-                        eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False)
+                    if data.dev_set is not None:
+                        eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False, training=False)
                         eval_loss, bleu_rouge = self.evaluate(eval_batches)
                         self.logger.info('Dev eval loss {}'.format(eval_loss))
                         self.logger.info('Dev eval result: {}'.format(bleu_rouge))
@@ -386,15 +386,15 @@ class RCModel(object):
         for epoch in range(1, epochs + 1):
 
             self.logger.info('Training the model for epoch {}'.format(epoch))
-            train_batches = data.gen_mini_batches('train', batch_size, pad_id, shuffle=True)    # 定义一个生成器
+            train_batches = data.gen_mini_batches('train', batch_size, pad_id, shuffle=True, training=True)    # 定义一个生成器
             train_loss = self._train_epoch(train_batches, dropout_keep_prob, epoch, data, batch_size,
                                            save_dir, save_prefix, rand_seed, max_bleu_4)
             self.logger.info('Average train loss for epoch {} is {}'.format(epoch, train_loss))
 
             if evaluate:
                 self.logger.info('Evaluating the model after epoch {}'.format(epoch))
-                if data.dev_files is not None:
-                    eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False)
+                if data.dev_set is not None:
+                    eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False, training=False)
                     eval_loss, bleu_rouge = self.evaluate(eval_batches)
                     self.logger.info('Dev eval loss {}'.format(eval_loss))
                     self.logger.info('Dev eval result: {}'.format(bleu_rouge))
