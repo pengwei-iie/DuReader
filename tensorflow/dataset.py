@@ -175,7 +175,7 @@ class BRCDataset(object):
                     fake_passage_tokens = []
                     for para_info in para_infos[:1]:  # 只取第一个最高的
                         fake_passage_tokens += para_info[0]
-                    sample['passages'].append({'passage_tokens': fake_passage_tokens})  # 把最高的那个段落加到sample['passages']
+                    sample['passages'].append(fake_passage_tokens)  # 把最高的那个段落加到sample['passages']
 
                 if doc['is_selected']:
                     sample['answer_label'].append(1)
@@ -202,6 +202,7 @@ class BRCDataset(object):
                       'passage_length': [],
                       'answer_label': [],
                       'answer_index': [],
+                      'answer_loss': [],
                       'question_type': [],
                       'start_id': [],
                       'end_id': []}
@@ -229,11 +230,20 @@ class BRCDataset(object):
             batch_data['question_token_ids'].append(sample['question_token_ids'])
             batch_data['question_length'].append(len(sample['question_token_ids']))
 
-            batch_data['answer_label'].append(sample['answer_label'])
             batch_data['question_type'].append(sample['question_type'])
-            # 用于tf.gather_nd
-            batch_data['answer_index'].append([sidx, sample['answer_passages'][0]])
-        batch_data, padded_p_len, padded_q_len = self._dynamic_padding(batch_data, pad_id)
+            batch_data['answer_label'].append(sample['answer_label'])
+            if training:
+                # 用于tf.gather_nd
+                batch_data['answer_index'].append([sidx, sample['answer_passages'][0]])
+                # 用于计算doc loss
+                batch_data['answer_loss'].extend(sample['answer_passages'])
+            elif len(sample['answer_passages']) != 0:
+                batch_data['answer_index'].append([sidx, sample['answer_passages'][0]])
+                batch_data['answer_loss'].extend(sample['answer_passages'])
+            else:
+                batch_data['answer_index'].append([sidx, 0])
+                batch_data['answer_loss'].extend([0])
+        batch_data, padded_p_len, padded_q_len = self._dynamic_padding(batch_data, pad_id, training)
         for sample in batch_data['raw_data']:
             if 'answer_passages' in sample and len(sample['answer_passages']):
                 # gold_passage_offset = padded_p_len * sample['answer_passages'][0]
@@ -247,12 +257,13 @@ class BRCDataset(object):
                 batch_data['end_id'].append(0)
         return batch_data
 
-    def _dynamic_padding(self, batch_data, pad_id):
+    def _dynamic_padding(self, batch_data, pad_id, training):
         """
         Dynamically pads the batch_data with pad_id
         """
         pad_p_len = min(self.max_p_len, max([max(sample) for sample in batch_data['passage_length']]))  # fixme
         pad_q_len = min(self.max_q_len, max(batch_data['question_length']))
+        # if training:
         pad_a_len = min(5, max([len(i) for i in batch_data['answer_label']]))
         for id, sample in enumerate(batch_data['passage_token_ids']):
             batch_data['passage_token_ids'][id] = [(ids + [pad_id] * (pad_p_len - len(ids)))[: pad_p_len]
@@ -260,8 +271,9 @@ class BRCDataset(object):
 
         batch_data['question_token_ids'] = [(ids + [pad_id] * (pad_q_len - len(ids)))[: pad_q_len]
                                             for ids in batch_data['question_token_ids']]
+        # if training:
         batch_data['answer_label'] = [(ids + [pad_id] * (pad_a_len - len(ids)))[: pad_a_len]
-                                      for ids in batch_data['answer_label']]
+                                          for ids in batch_data['answer_label']]
         return batch_data, pad_p_len, pad_q_len
 
     def word_iter(self, set_name=None):
