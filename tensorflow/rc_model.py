@@ -337,7 +337,7 @@ class RCModel(object):
                 one_passage = tf.gather_nd(tf.reshape(self.fuse_p_encodes,
                                                       [batch_size, self.p_emb.shape.as_list()[1],
                                                        tf.shape(self.p_emb)[2], 2 * self.hidden_size]),
-                                           doc_index)
+                                           self.answer_index)
                 print('self.not_train')
 
             concat_passage_encodes = one_passage  # fina_passage: b*5, len_p, hidden*2 --> b, 5*len_p, hidden*2
@@ -401,7 +401,7 @@ class RCModel(object):
             dropout_keep_prob: float value indicating dropout keep probability
         """
         pad_id = self.vocab.get_id(self.vocab.pad_token)
-        total_num, total_loss = 0, 0
+        total_num, total_loss, total_loss_doc = 0, 0, 0
         log_every_n_batch, n_batch_loss = 100, 0
         for bitx, batch in enumerate(train_batches, 1):     # 这里才开始真正使用train_batches， 每次调用batch size个
             feed_dict = {self.p['data']: batch['passage_token_ids'],
@@ -412,14 +412,16 @@ class RCModel(object):
                          self.answer_index: batch['answer_index'],
                          self.answer_loss: batch['answer_loss'],
                          self.is_train: True}
-            _, loss = self.sess.run([self.train_op, self.loss], feed_dict)
+            _, loss, doc_loss = self.sess.run([self.train_op, self.loss, self.doc_loss], feed_dict)
             total_loss += loss * len(batch['raw_data'])
             total_num += len(batch['raw_data'])
             n_batch_loss += loss
+            total_loss_doc += doc_loss
             if log_every_n_batch > 0 and bitx % log_every_n_batch == 0:
-                self.logger.info('Average loss from batch {} to {} is {}'.format(
-                    bitx - log_every_n_batch + 1, bitx, n_batch_loss / log_every_n_batch))
+                self.logger.info('Average loss from batch {} to {} is {}, and doc_loss is'.format(
+                    bitx - log_every_n_batch + 1, bitx, n_batch_loss / log_every_n_batch, total_loss_doc / log_every_n_batch))
                 n_batch_loss = 0
+                total_loss_doc = 0
                 if bitx % 800 == 0:
                     self.logger.info('Evaluating the model after epoch {} iters {}'.format(epoch, bitx))
                     if data.dev_set is not None:
