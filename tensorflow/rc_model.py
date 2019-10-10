@@ -326,6 +326,7 @@ class RCModel(object):
                 one_passage = tf.gather_nd(tf.reshape(self.fuse_p_encodes,
                                                       [batch_size, self.p_emb.shape.as_list()[1], tf.shape(self.p_emb)[2], 2 * self.hidden_size]),
                                            self.answer_index)
+
                 print('self.is_train')
             else:
                 doc_index = tf.argmax(self.passage_score, -1)       # batch
@@ -370,7 +371,8 @@ class RCModel(object):
         self.end_loss = sparse_nll_loss(probs=self.end_probs, labels=self.end_label)
         self.doc_loss = tf.reduce_mean(sparse_nll_loss(probs=self.passage_score, labels=self.answer_loss))
         self.all_params = tf.trainable_variables()
-        self.loss = tf.reduce_mean(tf.add(tf.add(self.start_loss, self.end_loss), self.doc_loss))
+        # self.loss = tf.reduce_mean(tf.add(tf.add(self.start_loss, self.end_loss), self.doc_loss))
+        self.loss = tf.reduce_mean(tf.add(self.start_loss, self.end_loss))
         if self.weight_decay > 0:
             with tf.variable_scope('l2_loss'):
                 l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in self.all_params])
@@ -412,13 +414,14 @@ class RCModel(object):
                          self.answer_index: batch['answer_index'],
                          self.answer_loss: batch['answer_loss'],
                          self.is_train: True}
-            _, loss, doc_loss = self.sess.run([self.train_op, self.loss, self.doc_loss], feed_dict)
+            # _, loss, doc_loss = self.sess.run([self.train_op, self.loss, self.doc_loss], feed_dict)
+            _, loss = self.sess.run([self.train_op, self.loss], feed_dict)
             total_loss += loss * len(batch['raw_data'])
             total_num += len(batch['raw_data'])
             n_batch_loss += loss
-            total_loss_doc += doc_loss
+            # total_loss_doc += doc_loss
             if log_every_n_batch > 0 and bitx % log_every_n_batch == 0:
-                self.logger.info('Average loss from batch {} to {} is {}, and doc_loss is'.format(
+                self.logger.info('Average loss from batch {} to {} is {}, and doc_loss is {}'.format(
                     bitx - log_every_n_batch + 1, bitx, n_batch_loss / log_every_n_batch, total_loss_doc / log_every_n_batch))
                 n_batch_loss = 0
                 total_loss_doc = 0
