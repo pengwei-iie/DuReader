@@ -328,7 +328,7 @@ class RCModel(object):
                                            self.answer_index)
                 print('self.is_train')
             else:
-                doc_index = tf.reduce_max(self.passage_score, -1)       # batch
+                doc_index = tf.argmax(self.passage_score, -1)       # batch
                 # fixme: 对doc进行维度变换
                 # doc_index = tf.expand_dims(doc_index, 1)
                 index = tf.expand_dims(tf.range(tf.shape(doc_index)[0]), 1)
@@ -368,7 +368,7 @@ class RCModel(object):
         # start_probs  (batch , tokens)   start_label (batch)
         self.start_loss = sparse_nll_loss(probs=self.start_probs, labels=self.start_label)
         self.end_loss = sparse_nll_loss(probs=self.end_probs, labels=self.end_label)
-        self.doc_loss = sparse_nll_loss(probs=self.passage_score, labels=self.answer_loss)
+        self.doc_loss = tf.reduce_mean(sparse_nll_loss(probs=self.passage_score, labels=self.answer_loss))
         self.all_params = tf.trainable_variables()
         self.loss = tf.reduce_mean(tf.add(tf.add(self.start_loss, self.end_loss), self.doc_loss))
         if self.weight_decay > 0:
@@ -425,7 +425,7 @@ class RCModel(object):
                 if bitx % 800 == 0:
                     self.logger.info('Evaluating the model after epoch {} iters {}'.format(epoch, bitx))
                     if data.dev_set is not None:
-                        eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False, training=False)
+                        eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False, training=True)
                         eval_loss, bleu_rouge = self.evaluate(eval_batches)
                         self.logger.info('Dev eval loss {}'.format(eval_loss))
                         self.logger.info('Dev eval result: {}'.format(bleu_rouge))
@@ -464,7 +464,7 @@ class RCModel(object):
             if evaluate:
                 self.logger.info('Evaluating the model after epoch {}'.format(epoch))
                 if data.dev_set is not None:
-                    eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False, training=False)
+                    eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False, training=True)
                     eval_loss, bleu_rouge = self.evaluate(eval_batches)
                     self.logger.info('Dev eval loss {}'.format(eval_loss))
                     self.logger.info('Dev eval result: {}'.format(bleu_rouge))
