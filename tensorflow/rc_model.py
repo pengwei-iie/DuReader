@@ -322,26 +322,31 @@ class RCModel(object):
         with tf.variable_scope('same_question_concat'):
             # 先找到答案来源于哪一篇文章 (b, 5, tokens, hidden) -> (b, tokens, hidden)
             batch_size = tf.shape(self.start_label)[0]
-            if self.is_train is not None:
-                one_passage = tf.gather_nd(tf.reshape(self.fuse_p_encodes,
-                                                      [batch_size, self.p_emb.shape.as_list()[1], tf.shape(self.p_emb)[2], 2 * self.hidden_size]),
-                                           self.answer_index)
+            # if self.is_train is not None:
+            #     one_passage = tf.gather_nd(tf.reshape(self.fuse_p_encodes,
+            #                                           [batch_size, self.p_emb.shape.as_list()[1], tf.shape(self.p_emb)[2], 2 * self.hidden_size]),
+            #                                self.answer_index)
+            #
+            #     print('self.is_train')
+            # else:
+            #     doc_index = tf.argmax(self.passage_score, -1)       # batch
+            #     # fixme: 对doc进行维度变换
+            #     # doc_index = tf.expand_dims(doc_index, 1)
+            #     index = tf.expand_dims(tf.range(tf.shape(doc_index)[0]), 1)
+            #     doc_index = tf.expand_dims(doc_index, 1)
+            #     doc_index = tf.concat([index, doc_index], axis=1)
+            #     one_passage = tf.gather_nd(tf.reshape(self.fuse_p_encodes,
+            #                                           [batch_size, self.p_emb.shape.as_list()[1],
+            #                                            tf.shape(self.p_emb)[2], 2 * self.hidden_size]),
+            #                                self.answer_index)
+            #     print('self.not_train')
 
-                print('self.is_train')
-            else:
-                doc_index = tf.argmax(self.passage_score, -1)       # batch
-                # fixme: 对doc进行维度变换
-                # doc_index = tf.expand_dims(doc_index, 1)
-                index = tf.expand_dims(tf.range(tf.shape(doc_index)[0]), 1)
-                doc_index = tf.expand_dims(doc_index, 1)
-                doc_index = tf.concat([index, doc_index], axis=1)
-                one_passage = tf.gather_nd(tf.reshape(self.fuse_p_encodes,
-                                                      [batch_size, self.p_emb.shape.as_list()[1],
-                                                       tf.shape(self.p_emb)[2], 2 * self.hidden_size]),
-                                           self.answer_index)
-                print('self.not_train')
+            # concat_passage_encodes = one_passage  # fina_passage: b*5, len_p, hidden*2 --> b, 5*len_p, hidden*2
 
-            concat_passage_encodes = one_passage  # fina_passage: b*5, len_p, hidden*2 --> b, 5*len_p, hidden*2
+            concat_passage_encodes = tf.reshape(
+                self.fuse_p_encodes,
+                [batch_size, -1, 2 * self.hidden_size]
+            )  # fina_passage: b*5, len_p, hidden --> b, 5*len_p, hidden
 
             no_dup_question_encodes = tf.reshape(
                 self.sep_q_encodes,
@@ -366,7 +371,7 @@ class RCModel(object):
                 labels = tf.one_hot(labels, tf.shape(probs)[1], axis=1)
                 losses = - tf.reduce_sum(labels * tf.log(probs + epsilon), 1)
             return losses
-        # start_probs   (batch , tokens)   start_label (batch)
+        # start_probs  (batch , tokens)   start_label (batch)
         self.start_loss = sparse_nll_loss(probs=self.start_probs, labels=self.start_label)
         self.end_loss = sparse_nll_loss(probs=self.end_probs, labels=self.end_label)
         self.doc_loss = tf.reduce_mean(sparse_nll_loss(probs=self.passage_score, labels=self.answer_loss))
