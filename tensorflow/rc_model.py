@@ -351,7 +351,7 @@ class RCModel(object):
         decoder = PointerNetDecoder(self.hidden_size)
         # return (batch * 2500)
         self.start_probs, self.end_probs = decoder.decode(concat_passage_encodes,
-                                                          no_dup_question_encodes)
+                                                          self.sep_q_encodes)
 
     def _compute_loss(self):
         """
