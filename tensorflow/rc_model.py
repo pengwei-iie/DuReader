@@ -366,7 +366,7 @@ class RCModel(object):
                 labels = tf.one_hot(labels, tf.shape(probs)[1], axis=1)
                 losses = - tf.reduce_sum(labels * tf.log(probs + epsilon), 1)
             return losses
-        # start_probs  (batch , tokens)   start_label (batch)
+        # start_probs   (batch , tokens)   start_label (batch)
         self.start_loss = sparse_nll_loss(probs=self.start_probs, labels=self.start_label)
         self.end_loss = sparse_nll_loss(probs=self.end_probs, labels=self.end_label)
         self.doc_loss = tf.reduce_mean(sparse_nll_loss(probs=self.passage_score, labels=self.answer_loss))
