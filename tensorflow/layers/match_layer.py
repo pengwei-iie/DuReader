@@ -99,20 +99,12 @@ class AttentionFlowMatchLayer(object):
         Match the passage_encodes with question_encodes using Attention Flow Match algorithm
         """
         with tf.variable_scope('bidaf'):
-            # fixme question
-            question_encodes = tf.tile(tf.expand_dims(question_encodes, 1), [1, tf.shape(p['data'])[1], 1, 1])
-            question_encodes = tf.reshape(question_encodes, [-1, tf.shape(question_encodes)[2],
-                                                             question_encodes.shape.as_list()[-1]])
-            mask_question = tf.tile(tf.expand_dims(q['mask'], 1), [1, tf.shape(p['data'])[1], 1])
-            mask_question = tf.reshape(mask_question, [-1, tf.shape(mask_question)[2]])
-
             sim_matrix = tf.matmul(passage_encodes, question_encodes, transpose_b=True)         # b转置再操作；passage_encodes和question_encodes都是三维的；得到len（pa）×len（q）
-            sim_matrix_i = tfu.mask_softmax(sim_matrix, mask_question, -1)
+            sim_matrix_i = tfu.mask_softmax(sim_matrix, q['mask'], -1)
             context2question_attn = tf.matmul(sim_matrix_i, question_encodes)   # 默认就是-1，对最后一维进行操作 b*len(pa)*hidden
 
-            sim_matrix_j = tf.expand_dims(tf.reduce_max(sim_matrix, 2), 1)      # b * 1 * len(p)
-            passage_mask = tf.reshape(p['mask'], [-1, tf.shape(passage_encodes)[1]])
-            sim_matrix_j = tfu.mask_softmax(sim_matrix_j, passage_mask, -1)         # b*1*len(pa)
+            sim_matrix_j = tf.expand_dims(tf.reduce_max(sim_matrix, 2), 1)
+            sim_matrix_j = tfu.mask_softmax(sim_matrix_j, p['mask'], -1)         # b*1*len(pa)
             # b = tf.nn.softmax(, -1)              # b*1*len(pa)
             question2context_attn = tf.tile(tf.matmul(sim_matrix_j, passage_encodes),           # b*1*hidden
                                          [1, tf.shape(passage_encodes)[1], 1])                  # b*len(pa)*hidden
