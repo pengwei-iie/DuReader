@@ -69,7 +69,7 @@ class RCModel(object):
         self.layer = args.layer
         self.head = args.head
         self.batch_size = args.batch_size
-
+        self.is_train = tf.cast(True, tf.bool)
 
         # session info
         sess_config = tf.ConfigProto()
@@ -123,17 +123,14 @@ class RCModel(object):
             length = tf.reduce_sum(tf.to_int32(mask), -1)
             return {'data': pl, 'mask': mask, 'length': length}
 
-        self.p = _mapper(tf.placeholder(tf.int32, [None, 5, None]))
+        self.p = _mapper(tf.placeholder(tf.int32, [None, None]))
         self.q = _mapper(tf.placeholder(tf.int32, [None, None]))
         self.p_length = self.p['length']
         self.q_length = self.q['length']
         self.start_label = tf.placeholder(tf.int32, [None])
         self.end_label = tf.placeholder(tf.int32, [None])
-        self.answer_label = tf.placeholder(tf.int32, [None, None])
         self.answer_index = tf.placeholder(tf.int32, [None, 2])
         self.answer_loss = tf.placeholder(tf.int32, [None])
-
-        self.is_train = tf.placeholder(tf.bool)
         # self.dropout_keep_prob = tf.placeholder(tf.float32)
 
     def _embed(self):
@@ -166,10 +163,8 @@ class RCModel(object):
         """
         Employs two Bi-LSTMs to encode passage and question separately
         """
-        self.p_emb_reshape = tf.reshape(self.p_emb, [-1, tf.shape(self.p_emb)[-2], self.p_emb.shape.as_list()[-1]])
-        self.p_length = tf.reshape(self.p_length, [-1])
         with tf.variable_scope('passage_encoding'):
-            self.sep_p_encodes, _ = rnn('bi-lstm', self.p_emb_reshape, self.p_length, self.hidden_size) # 得到rnn的输出和状态
+            self.sep_p_encodes, _ = rnn('bi-lstm', self.p_emb, self.p_length, self.hidden_size) # 得到rnn的输出和状态
         with tf.variable_scope('question_encoding'):
             self.sep_q_encodes, _ = rnn('bi-lstm', self.q_emb, self.q_length, self.hidden_size)
         if self.use_dropout:
@@ -186,7 +181,6 @@ class RCModel(object):
             match_layer = AttentionFlowMatchLayer(self.hidden_size)
         else:
             raise NotImplementedError('The algorithm {} is not implemented.'.format(self.algo))
-        # 此处的self.sep_q_encodes 还是batch的，如果做attention，需要batch*5
         self.match_p_encodes, _ = match_layer.match(self.sep_p_encodes, self.sep_q_encodes,
                                                     self.p, self.q)                   # 连接了四个向量，最后得到b*len(pa)*1200
         if self.use_dropout:
@@ -204,30 +198,42 @@ class RCModel(object):
             self.fuse_p_encodes = tf.nn.dropout(self.fuse_p_encodes, self.dropout_keep_prob)
 
     def _passage_encoder(self):
-        passage_mask = tf.reshape(self.p['mask'], [-1, tf.shape(self.p_emb)[2]])
+        # passage_mask = tf.reshape(self.p['mask'], [-1, tf.shape(self.p_emb)[1]])
         # self.fuse_p_encodes  (b*num_p, tokens, hidden)    passage_mask (b*num_p, tokens)
         # return : (b*num_p, hidden), (b*num_p, tokens, 1)
-        passage_level_emb, prob = tfu.summ(self.fuse_p_encodes, self.hidden_size, passage_mask, self.dropout_keep_prob,
+        batch_size = tf.shape(self.start_label)[0]
+        passage_level_emb, prob = tfu.summ(self.fuse_p_encodes, self.hidden_size, self.p['mask'],
+                                           self.dropout_keep_prob,
                                            True, 'summ2sent', True)
 
-        passage_level_emb = tf.reshape(passage_level_emb, [tf.shape(self.p_emb)[0], tf.shape(self.p_emb)[1],
+        passage_level_emb = tf.reshape(passage_level_emb, [batch_size, -1,
                                                            self.p_emb.shape.as_list()[-1]])
 
         # 对question进行一个的表示
-        question_level_emb, prob = tfu.summ(self.q_emb, self.hidden_size, self.q['mask'], self.dropout_keep_prob,
-                                  True, 'summ2question', True)
+        ques = tf.reshape(
+            self.q_emb,
+            [batch_size, -1, tf.shape(self.sep_q_encodes)[1], 2 * self.hidden_size]
+        )[0:, 0, 0:, 0:]
+        ques_mask = tf.reshape(
+            self.q['mask'],
+            [batch_size, -1, tf.shape(self.sep_q_encodes)[1]]
+        )[0:, 0, 0:]
+        question_level_emb, prob = tfu.summ(ques, self.hidden_size, ques_mask, self.dropout_keep_prob,
+                                            True, 'summ2question', True)
         # batch, 1, hidden
         question_level_emb = tf.expand_dims(question_level_emb, axis=1)
         # 经过gate函数
         # 使用fusion
-        score = tf.matmul(a=tf.nn.relu(tfu.dense(passage_level_emb, 1, use_bias=False, scope="score_b_orderanddiag")),
-                          b=tf.nn.relu(tfu.dense(question_level_emb, 1, use_bias=False, scope="score_b_orderanddiag", reuse=True)),
-                          transpose_b=True)
+        score = tf.matmul(
+            a=tf.nn.relu(tfu.dense(passage_level_emb, 1, use_bias=False, scope="score_b_orderanddiag")),
+            b=tf.nn.relu(tfu.dense(question_level_emb, 1, use_bias=False, scope="score_b_orderanddiag", reuse=True)),
+            transpose_b=True)
         # 计算attention，得到融合标题的句子表达
         ques_aware_passage = passage_level_emb * score
         # 连接向量
         new_passage = tf.concat([ques_aware_passage, passage_level_emb,
-                              ques_aware_passage * passage_level_emb, passage_level_emb - ques_aware_passage], axis=2)
+                                 ques_aware_passage * passage_level_emb, passage_level_emb - ques_aware_passage],
+                                axis=2)
         # 激活
         new_passage_tanh = tf.nn.tanh(tfu.dense(new_passage, self.hidden_size * 2, scope="new_sens_dense"))
         # 利用这个new_sens_dense计算sigmoid
@@ -240,37 +246,37 @@ class RCModel(object):
         tmp = tf.tanh(tfu.dense(
             tf.concat([self.fina_passage, question_level_tile], axis=2), 1, use_bias=False, scope='q_and_p'))
         # (batch, num_passage) 用于计算loss
-        passage_score = tf.squeeze(tfu.dense(tmp, 1, False, 'second_dense'))
+        passage_score = tf.squeeze(tfu.dense(tmp, 1, False, 'second_dense'), axis=2)
         self.passage_score = tf.nn.softmax(passage_score)
 
-    # def _self_attention(self):
-    #     # 双线性softmax
-    #     with tf.variable_scope('bi_linear'):
-    #         # 经过双向lstm，最后一维变成300
-    #         batch_add5 = tf.shape(self.fuse_p_encodes)[0]
-    #
-    #         # use xavier initialization
-    #
-    #         W_bi = tf.get_variable("W_bi", [self.hidden_size * 2, self.hidden_size * 2],
-    #                                initializer=tf.contrib.layers.xavier_initializer())
-    #         # W_bi = tf.get_variable("W_bi", [self.hidden_size * 2, self.hidden_size * 2],
-    #         #                        initializer=tf.random_normal_initializer(mean=0.0, stddev=0.1, seed=None, dtype=tf.float32))
-    #         tmp = tf.reshape(self.fuse_p_encodes, [-1, self.hidden_size*2])
-    #         tmp = tf.matmul(tmp, W_bi)
-    #         tmp = tf.reshape(tmp, [batch_add5, -1, self.hidden_size*2])
-    #         # 以上就是通过reshape的方式进行双线性变化
-    #         before_softmax = tf.tanh(tf.matmul(tmp, self.fuse_p_encodes, transpose_b=True))     # b, n, n
-    #         L = tfu.mask_softmax(before_softmax, self.p['mask'])
-    #         # L = tf.nn.softmax(tf.matmul(tmp, self.fuse_p_encodes, transpose_b=True))
-    #         self.binear_passage = tf.matmul(L, self.fuse_p_encodes)
-    #         # self.binear_passage = tfu.fusion(self.fuse_p_encodes, self.binear_passage, self.hidden_size, name="binear")
-    #
-    #         # 将最后一维变成self.hidden_size
-    #         # self.binear_passage = tfu.dense(self.binear_passage, 1, "to_hidden_size")
-    #         # 需要再经过一个双向LISTM
-    #     with tf.variable_scope('self_attention'):
-    #         self.fina_passage, _ = rnn('bi-lstm', self.binear_passage, self.p_length,
-    #                                      self.hidden_size, layer_num=1)  # 经过双向RNN,变成前向+后向，150+150
+    def _self_attention(self):
+        # 双线性softmax
+        with tf.variable_scope('bi_linear'):
+            # 经过双向lstm，最后一维变成300
+            batch_add5 = tf.shape(self.fuse_p_encodes)[0]
+
+            # use xavier initialization
+
+            W_bi = tf.get_variable("W_bi", [self.hidden_size * 2, self.hidden_size * 2],
+                                   initializer=tf.contrib.layers.xavier_initializer())
+            # W_bi = tf.get_variable("W_bi", [self.hidden_size * 2, self.hidden_size * 2],
+            #                        initializer=tf.random_normal_initializer(mean=0.0, stddev=0.1, seed=None, dtype=tf.float32))
+            tmp = tf.reshape(self.fuse_p_encodes, [-1, self.hidden_size*2])
+            tmp = tf.matmul(tmp, W_bi)
+            tmp = tf.reshape(tmp, [batch_add5, -1, self.hidden_size*2])
+            # 以上就是通过reshape的方式进行双线性变化
+            before_softmax = tf.tanh(tf.matmul(tmp, self.fuse_p_encodes, transpose_b=True))     # b, n, n
+            L = tfu.mask_softmax(before_softmax, self.p['mask'])
+            # L = tf.nn.softmax(tf.matmul(tmp, self.fuse_p_encodes, transpose_b=True))
+            self.binear_passage = tf.matmul(L, self.fuse_p_encodes)
+            # self.binear_passage = tfu.fusion(self.fuse_p_encodes, self.binear_passage, self.hidden_size, name="binear")
+
+            # 将最后一维变成self.hidden_size
+            # self.binear_passage = tfu.dense(self.binear_passage, 1, "to_hidden_size")
+            # 需要再经过一个双向LISTM
+        with tf.variable_scope('self_attention'):
+            self.fina_passage, _ = rnn('bi-lstm', self.binear_passage, self.p_length,
+                                         self.hidden_size, layer_num=1)  # 经过双向RNN,变成前向+后向，150+150
 
         # 对问题操作,自对其，后续
         # W_q = tf.get_variable("W_q", [self.hidden_size * 2, self.hidden_size * 2],
@@ -320,43 +326,42 @@ class RCModel(object):
         And since the encodes of queries in the same document is same, we select the first one.
         """
         with tf.variable_scope('same_question_concat'):
-            # 先找到答案来源于哪一篇文章 (b, 5, tokens, hidden) -> (b, tokens, hidden)
             batch_size = tf.shape(self.start_label)[0]
-            # if self.is_train is not None:
-            #     one_passage = tf.gather_nd(tf.reshape(self.fuse_p_encodes,
-            #                                           [batch_size, self.p_emb.shape.as_list()[1], tf.shape(self.p_emb)[2], 2 * self.hidden_size]),
-            #                                self.answer_index)
-            #
-            #     print('self.is_train')
-            # else:
-            #     doc_index = tf.argmax(self.passage_score, -1)       # batch
-            #     # fixme: 对doc进行维度变换
-            #     # doc_index = tf.expand_dims(doc_index, 1)
-            #     index = tf.expand_dims(tf.range(tf.shape(doc_index)[0]), 1)
-            #     doc_index = tf.expand_dims(doc_index, 1)
-            #     doc_index = tf.concat([index, doc_index], axis=1)
-            #     one_passage = tf.gather_nd(tf.reshape(self.fuse_p_encodes,
-            #                                           [batch_size, self.p_emb.shape.as_list()[1],
-            #                                            tf.shape(self.p_emb)[2], 2 * self.hidden_size]),
-            #                                self.answer_index)
-            #     print('self.not_train')
 
-            # concat_passage_encodes = one_passage  # fina_passage: b*5, len_p, hidden*2 --> b, 5*len_p, hidden*2
+            if self.is_train is not None:
+                one_passage = tf.gather_nd(tf.reshape(self.fina_passage,
+                                                      [batch_size, -1, tf.shape(self.p_emb)[1], 2 * self.hidden_size]),
+                                           self.answer_index)
 
-            concat_passage_encodes = tf.reshape(
-                self.fuse_p_encodes,
-                [batch_size, -1, 2 * self.hidden_size]
-            )  # fina_passage: b*5, len_p, hidden --> b, 5*len_p, hidden
+                print('self.is_train')
+            else:
+                doc_index = tf.argmax(self.passage_score, -1)       # batch
+                # fixme: 对doc进行维度变换
+                # doc_index = tf.expand_dims(doc_index, 1)
+                index = tf.expand_dims(tf.range(tf.shape(doc_index)[0]), 1)
+                doc_index = tf.expand_dims(doc_index, 1)
+                doc_index = tf.concat([index, doc_index], axis=1)
+                one_passage = tf.gather_nd(tf.reshape(self.fina_passage,
+                                                      [batch_size, -1,
+                                                       tf.shape(self.p_emb)[1], 2 * self.hidden_size]),
+                                           doc_index)
+                print('self.not_train')
 
+            concat_passage_encodes = one_passage  # fina_passage: b*5, len_p, hidden*2 --> b, 5*len_p, hidden*2
+            # concat_passage_encodes = tf.reshape(
+            #     self.fuse_p_encodes,
+            #     [batch_size, -1, 2 * self.hidden_size]
+            # )       # fina_passage: b*5, len_p, hidden --> b, 5*len_p, hidden
+
+            # b, 5, len_q, hidden       [0:, 0, 0:, 0:] 表示只用第一个问题，因为5个问题都是一样的
             no_dup_question_encodes = tf.reshape(
                 self.sep_q_encodes,
                 [batch_size, -1, tf.shape(self.sep_q_encodes)[1], 2 * self.hidden_size]
             )[0:, 0, 0:, 0:]
 
         decoder = PointerNetDecoder(self.hidden_size)
-        # return (batch * 2500)
         self.start_probs, self.end_probs = decoder.decode(concat_passage_encodes,
-                                                          self.sep_q_encodes)
+                                                          no_dup_question_encodes)
 
     def _compute_loss(self):
         """
@@ -371,13 +376,17 @@ class RCModel(object):
                 labels = tf.one_hot(labels, tf.shape(probs)[1], axis=1)
                 losses = - tf.reduce_sum(labels * tf.log(probs + epsilon), 1)
             return losses
-        # start_probs  (batch , tokens)   start_label (batch)
+
         self.start_loss = sparse_nll_loss(probs=self.start_probs, labels=self.start_label)
         self.end_loss = sparse_nll_loss(probs=self.end_probs, labels=self.end_label)
-        self.doc_loss = tf.reduce_mean(sparse_nll_loss(probs=self.passage_score, labels=self.answer_loss))
+        self.doc_loss = sparse_nll_loss(probs=self.passage_score, labels=self.answer_loss)
+
+        self.print_docloss = tf.reduce_mean(self.doc_loss)
+        self.print_ansloss = tf.reduce_mean(tf.add(self.start_loss, self.end_loss))
+
         self.all_params = tf.trainable_variables()
-        # self.loss = tf.reduce_mean(tf.add(tf.add(self.start_loss, self.end_loss), self.doc_loss))
-        self.loss = tf.reduce_mean(tf.add(self.start_loss, self.end_loss))
+        # self.loss = tf.reduce_mean(tf.add(self.start_loss, self.end_loss))
+        self.loss = tf.reduce_mean(tf.add(tf.add(self.start_loss, self.end_loss), self.doc_loss))
         if self.weight_decay > 0:
             with tf.variable_scope('l2_loss'):
                 l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in self.all_params])
@@ -408,32 +417,39 @@ class RCModel(object):
             dropout_keep_prob: float value indicating dropout keep probability
         """
         pad_id = self.vocab.get_id(self.vocab.pad_token)
-        total_num, total_loss, total_loss_doc = 0, 0, 0
+        total_num, total_loss = 0, 0
         log_every_n_batch, n_batch_loss = 100, 0
+        n_batch_doc, n_batch_ans = 0, 0
         for bitx, batch in enumerate(train_batches, 1):     # 这里才开始真正使用train_batches， 每次调用batch size个
             feed_dict = {self.p['data']: batch['passage_token_ids'],
                          self.q['data']: batch['question_token_ids'],
+                         self.p_length: batch['passage_length'],
+                         self.q_length: batch['question_length'],
                          self.start_label: batch['start_id'],
                          self.end_label: batch['end_id'],
-                         self.answer_label: batch['answer_label'],
                          self.answer_index: batch['answer_index'],
                          self.answer_loss: batch['answer_loss'],
                          self.is_train: True}
-            # _, loss, doc_loss = self.sess.run([self.train_op, self.loss, self.doc_loss], feed_dict)
-            _, loss = self.sess.run([self.train_op, self.loss], feed_dict)
+            # _, loss = self.sess.run([self.train_op, self.loss], feed_dict)
+            _, loss, doc_loss, answer_loss = self.sess.run([self.train_op, self.loss, self.print_docloss, self.print_ansloss], feed_dict)
             total_loss += loss * len(batch['raw_data'])
             total_num += len(batch['raw_data'])
             n_batch_loss += loss
+
+            n_batch_doc += doc_loss
+            n_batch_ans += answer_loss
             # total_loss_doc += doc_loss
             if log_every_n_batch > 0 and bitx % log_every_n_batch == 0:
-                self.logger.info('Average loss from batch {} to {} is {}, and doc_loss is {}'.format(
-                    bitx - log_every_n_batch + 1, bitx, n_batch_loss / log_every_n_batch, total_loss_doc / log_every_n_batch))
+                self.logger.info('Average loss from batch {} to {} is {} and doc is {}, ans is {}'.format(
+                    bitx - log_every_n_batch + 1, bitx, n_batch_loss / log_every_n_batch,
+                    n_batch_doc / log_every_n_batch, n_batch_ans / log_every_n_batch))
                 n_batch_loss = 0
-                total_loss_doc = 0
+                n_batch_doc = 0
+                n_batch_ans = 0
                 if bitx % 800 == 0:
                     self.logger.info('Evaluating the model after epoch {} iters {}'.format(epoch, bitx))
                     if data.dev_set is not None:
-                        eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False, training=True)
+                        eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False, training=False)
                         eval_loss, bleu_rouge = self.evaluate(eval_batches)
                         self.logger.info('Dev eval loss {}'.format(eval_loss))
                         self.logger.info('Dev eval result: {}'.format(bleu_rouge))
@@ -472,7 +488,7 @@ class RCModel(object):
             if evaluate:
                 self.logger.info('Evaluating the model after epoch {}'.format(epoch))
                 if data.dev_set is not None:
-                    eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False, training=True)
+                    eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False, training=False)
                     eval_loss, bleu_rouge = self.evaluate(eval_batches)
                     self.logger.info('Dev eval loss {}'.format(eval_loss))
                     self.logger.info('Dev eval result: {}'.format(bleu_rouge))
@@ -483,7 +499,7 @@ class RCModel(object):
                 else:
                     self.logger.warning('No dev set is loaded for evaluation in the dataset!')
             else:
-                self.save(save_dir, save_prefix + '_' + str(epoch), rand_seed)
+                self.save(save_dir, save_prefix + '_' + str(epoch))
 
     def evaluate(self, eval_batches, result_dir=None, result_prefix=None, save_full_info=False):
         """
@@ -500,9 +516,10 @@ class RCModel(object):
         for b_itx, batch in enumerate(eval_batches):
             feed_dict = {self.p['data']: batch['passage_token_ids'],
                          self.q['data']: batch['question_token_ids'],
+                         self.p_length: batch['passage_length'],
+                         self.q_length: batch['question_length'],
                          self.start_label: batch['start_id'],
                          self.end_label: batch['end_id'],
-                         self.answer_label: batch['answer_label'],
                          self.answer_index: batch['answer_index'],
                          self.answer_loss: batch['answer_loss'],
                          self.is_train: None}
@@ -564,7 +581,7 @@ class RCModel(object):
         for p_idx, passage in enumerate(sample['passages']):
             if p_idx >= self.max_p_num:
                 continue
-            passage_len = min(self.max_p_len, len(passage))
+            passage_len = min(self.max_p_len, len(passage['passage_tokens']))
             answer_span, score = self.find_best_answer_for_passage(
                 start_prob[p_idx * padded_p_len: (p_idx + 1) * padded_p_len],
                 end_prob[p_idx * padded_p_len: (p_idx + 1) * padded_p_len],
@@ -577,7 +594,7 @@ class RCModel(object):
             best_answer = ''
         else:
             best_answer = ''.join(
-                sample['passages'][best_p_idx][best_span[0]: best_span[1] + 1])
+                sample['passages'][best_p_idx]['passage_tokens'][best_span[0]: best_span[1] + 1])
         return best_answer
 
     def find_best_answer_for_passage(self, start_probs, end_probs, passage_len=None):
