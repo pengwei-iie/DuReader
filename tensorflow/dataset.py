@@ -123,6 +123,8 @@ class BRCDataset(object):
                       'question_length': [],
                       'passage_token_ids': [],
                       'passage_length': [],
+                      'answer_index': [],
+                      'answer_loss': [],
                       'start_id': [],
                       'end_id': []}
         batch_data['raw_data'] = self._load_dataset(batch_data['raw_data'], training)
@@ -145,12 +147,25 @@ class BRCDataset(object):
                     batch_data['question_length'].append(0)
                     batch_data['passage_token_ids'].append([])
                     batch_data['passage_length'].append(0)
+            if training:
+                # 用于tf.gather_nd
+                batch_data['answer_index'].append([sidx, sample['answer_passages'][0]])
+                # 用于计算doc loss
+                batch_data['answer_loss'].extend(sample['answer_passages'])
+            elif len(sample['answer_passages']) != 0:
+                batch_data['answer_index'].append([sidx, sample['answer_passages'][0]])
+                batch_data['answer_loss'].extend(sample['answer_passages'])
+            else:
+                batch_data['answer_index'].append([sidx, 0])
+                batch_data['answer_loss'].extend([0])
         batch_data, padded_p_len, padded_q_len = self._dynamic_padding(batch_data, pad_id)
         for sample in batch_data['raw_data']:
             if 'answer_passages' in sample and len(sample['answer_passages']):
-                gold_passage_offset = padded_p_len * sample['answer_passages'][0]
-                batch_data['start_id'].append(gold_passage_offset + sample['answer_spans'][0][0])
-                batch_data['end_id'].append(gold_passage_offset + sample['answer_spans'][0][1])
+                # gold_passage_offset = padded_p_len * sample['answer_passages'][0]
+                # batch_data['start_id'].append(gold_passage_offset + sample['answer_spans'][0][0])
+                # batch_data['end_id'].append(gold_passage_offset + sample['answer_spans'][0][1])
+                batch_data['start_id'].append(sample['answer_spans'][0][0])
+                batch_data['end_id'].append(sample['answer_spans'][0][1])
             else:
                 # fake span for some samples, only valid for testing
                 batch_data['start_id'].append(0)

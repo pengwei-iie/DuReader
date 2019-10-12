@@ -66,7 +66,7 @@ def parse_args():
     model_settings = parser.add_argument_group('model settings')
     model_settings.add_argument('--algo', choices=['BIDAF', 'MLSTM'], default='BIDAF',
                                 help='choose the algorithm to use')
-    model_settings.add_argument('--rand_seed', type=int, default=12,
+    model_settings.add_argument('--rand_seed', type=int, default=1,
                                 help='set the random seed')
     model_settings.add_argument('--embed_size', type=int, default=300,
                                 help='size of the embeddings')
