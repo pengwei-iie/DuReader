@@ -67,10 +67,15 @@ class BRCDataset(object):
         data_set = []
         for lidx, line in enumerate(list):   # 对每一个样本（多文档多段落）
             sample = json.loads(line.strip())
+            sample['can_answer'] = []
             if train:
-                if len(sample['answer_spans']) == 0:
-                    continue
-                if sample['answer_spans'][0][1] >= self.max_p_len:  # 对选出来的【【15, 65】】，过滤掉大于最大长度的文档
+                if len(sample['answer_spans']) != 0:
+                    sample['can_answer'].extend([1])
+                else:
+                    sample['can_answer'].extend([0])
+                    # continue
+                if len(sample['answer_spans']) != 0 and sample['answer_spans'][0][1] >= self.max_p_len:
+                    # 对选出来的【【15, 65】】，过滤掉大于最大长度的文档
                     continue
 
             if 'answer_docs' in sample:
@@ -84,10 +89,16 @@ class BRCDataset(object):
                 #     continue
                 if train:                                       # 把被选择的和未被选择的最相关的段落都加到sample['passages']
                     most_related_para = doc['most_related_para']
-                    sample['passages'].append(
-                        {'passage_tokens': doc['segmented_paragraphs'][most_related_para],
-                         'is_selected': doc['is_selected']}
-                    )
+                    if most_related_para == -1:
+                        sample['passages'].append(
+                            {'passage_tokens': doc['segmented_paragraphs'][most_related_para+1],
+                             'is_selected': doc['is_selected']}
+                        )
+                    else:
+                        sample['passages'].append(
+                            {'passage_tokens': doc['segmented_paragraphs'][most_related_para],
+                             'is_selected': doc['is_selected']}
+                        )
                 else:
                     para_infos = [] # 存的是段落，段落和问题的common在问题长度的占比，以及段落的长度
                     for para_tokens in doc['segmented_paragraphs']: # 对一篇文章里的每一段
@@ -125,13 +136,14 @@ class BRCDataset(object):
                       'passage_length': [],
                       'answer_index': [],
                       'answer_loss': [],
+                      'can_answer': [],
                       'start_id': [],
                       'end_id': []}
         batch_data['raw_data'] = self._load_dataset(batch_data['raw_data'], training)
         max_passage_num = max([len(sample['passages']) for sample in batch_data['raw_data']])
         max_passage_num = min(self.max_p_num, max_passage_num)
-        for sidx, sample in enumerate(batch_data['raw_data']):
-            for pidx in range(max_passage_num):
+        for sidx, sample in enumerate(batch_data['raw_data']):      # 对于每一个样例
+            for pidx in range(max_passage_num):                     # 对于每一篇文章
                 if pidx < len(sample['passages']):
                     sample['question_token_ids'] = self.vocab.convert_to_ids(sample['question_tokens'])
 
@@ -147,7 +159,8 @@ class BRCDataset(object):
                     batch_data['question_length'].append(0)
                     batch_data['passage_token_ids'].append([])
                     batch_data['passage_length'].append(0)
-            if training:
+            batch_data['can_answer'].extend(sample['can_answer'])
+            if training and len(sample['answer_passages']) != 0:
                 # 用于tf.gather_nd
                 batch_data['answer_index'].append([sidx, sample['answer_passages'][0]])
                 # 用于计算doc loss
@@ -157,7 +170,7 @@ class BRCDataset(object):
                 batch_data['answer_loss'].extend(sample['answer_passages'])
             else:
                 batch_data['answer_index'].append([sidx, 0])
-                batch_data['answer_loss'].extend([0])
+                batch_data['answer_loss'].extend([-1])
         batch_data, padded_p_len, padded_q_len = self._dynamic_padding(batch_data, pad_id)
         for sample in batch_data['raw_data']:
             if 'answer_passages' in sample and len(sample['answer_passages']):
@@ -168,8 +181,8 @@ class BRCDataset(object):
                 batch_data['end_id'].append(sample['answer_spans'][0][1])
             else:
                 # fake span for some samples, only valid for testing
-                batch_data['start_id'].append(0)
-                batch_data['end_id'].append(0)
+                batch_data['start_id'].append(-1)
+                batch_data['end_id'].append(-1)
         return batch_data
 
     def _dynamic_padding(self, batch_data, pad_id):
