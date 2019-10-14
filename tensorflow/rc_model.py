@@ -131,6 +131,7 @@ class RCModel(object):
         self.end_label = tf.placeholder(tf.int32, [None])
         self.answer_index = tf.placeholder(tf.int32, [None, 2])
         self.answer_loss = tf.placeholder(tf.int32, [None])
+        self.can_loss = tf.placeholder(tf.int32, [None])
         self.is_train = tf.placeholder(tf.bool)
         # self.dropout_keep_prob = tf.placeholder(tf.float32)
 
@@ -250,7 +251,7 @@ class RCModel(object):
             tf.concat([self.fina_passage, question_level_tile], axis=2), 1, use_bias=False, scope='q_and_p'))
         # (batch, num_passage) 用于计算loss
         passage_score = tf.squeeze(tfu.dense(tmp, 1, False, 'second_dense'), axis=2)
-        self.passage_score = tf.nn.softmax(passage_score)
+        self.passage_score = tf.sigmoid(passage_score)
 
     # def _self_attention(self):
     #     # 双线性softmax
@@ -338,7 +339,7 @@ class RCModel(object):
                 mask = tf.gather_nd(tf.reshape(self.p['mask'],
                                                [batch_size, -1, tf.shape(self.p_emb)[1]]),
                                            self.answer_index)
-                can_answer = tfu.summ(one_passage, self.hidden_size, mask,
+                can_answer, _ = tfu.summ(one_passage, self.hidden_size, mask,
                                       self.dropout_keep_prob, True, 'summ2pone', True)
                 print('self.is_train')
             else:
@@ -356,15 +357,15 @@ class RCModel(object):
                 mask = tf.gather_nd(tf.reshape(self.p['mask'],
                                                [batch_size, -1, tf.shape(self.p_emb)[1]]),
                                     doc_index)
-                can_answer = tfu.summ(one_passage, self.hidden_size, mask,
+                can_answer, _ = tfu.summ(one_passage, self.hidden_size, mask,
                                       self.dropout_keep_prob, False, 'summ2pone', True)
                 print('self.not_train')
             # 抽出来的one passage 维度为 (batch, tokens, hidden)，can_answer (batch, hidden)
             tmp = tf.tanh(tfu.dense(
-                tf.concat([can_answer, self.question_level_emb], axis=1), 1, use_bias=False, scope='q_and_p'))
+                tf.concat([can_answer, self.question_level_emb], axis=1), 1, use_bias=False, scope='q_and'))
             # (batch) 用于计算loss
-            can_answer_score = tf.squeeze(tfu.dense(tmp, 1, False, 'second_dense'), axis=1)
-            self.can_answer_score = tf.nn.softmax(can_answer_score)
+            can_answer_score = tf.squeeze(tfu.dense(tmp, 1, False, 'second_den'), axis=1)
+            self.can_answer_score = tf.sigmoid(can_answer_score)
 
 
             concat_passage_encodes = one_passage  # fina_passage: b*5, len_p, hidden*2 --> b, 5*len_p, hidden*2
@@ -399,10 +400,13 @@ class RCModel(object):
 
         self.start_loss = sparse_nll_loss(probs=self.start_probs, labels=self.start_label)
         self.end_loss = sparse_nll_loss(probs=self.end_probs, labels=self.end_label)
-        self.doc_loss = sparse_nll_loss(probs=self.passage_score, labels=self.answer_loss)
+
+        # 改成均方差试试
+        labels = tf.one_hot(self.answer_loss, tf.shape(self.passage_score)[1], axis=1)
+        self.doc_loss = tf.reduce_mean(tf.square(labels-self.passage_score))
 
         # 计算一个均方差
-        # self.can_loss =
+        # self.can_loss = tf.reduce_mean(tf.square(self.can_answer-self.can_answer_score))
 
         self.print_docloss = tf.reduce_mean(self.doc_loss)
         self.print_ansloss = tf.reduce_mean(tf.add(self.start_loss, self.end_loss))
@@ -410,6 +414,7 @@ class RCModel(object):
         self.all_params = tf.trainable_variables()
         # self.loss = tf.reduce_mean(tf.add(self.start_loss, self.end_loss))
         self.loss = tf.reduce_mean(tf.add(tf.add(self.start_loss, self.end_loss), self.doc_loss))
+        # self.loss += self.can_loss
         if self.weight_decay > 0:
             with tf.variable_scope('l2_loss'):
                 l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in self.all_params])
@@ -452,6 +457,7 @@ class RCModel(object):
                          self.end_label: batch['end_id'],
                          self.answer_index: batch['answer_index'],
                          self.answer_loss: batch['answer_loss'],
+                         self.can_loss: batch['can_answer'],
                          self.is_train: True}
             # _, loss = self.sess.run([self.train_op, self.loss], feed_dict)
             _, loss, doc_loss, answer_loss = self.sess.run([self.train_op, self.loss, self.print_docloss, self.print_ansloss], feed_dict)
@@ -545,6 +551,7 @@ class RCModel(object):
                          self.end_label: batch['end_id'],
                          self.answer_index: batch['answer_index'],
                          self.answer_loss: batch['answer_loss'],
+                         self.can_loss: batch['can_answer'],
                          self.is_train: None}
             start_probs, end_probs, loss = self.sess.run([self.start_probs,
                                                           self.end_probs, self.loss], feed_dict)
