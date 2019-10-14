@@ -131,7 +131,7 @@ class RCModel(object):
         self.end_label = tf.placeholder(tf.int32, [None])
         self.answer_index = tf.placeholder(tf.int32, [None, 2])
         self.answer_loss = tf.placeholder(tf.int32, [None])
-        self.can_loss = tf.placeholder(tf.int32, [None])
+        self.can_answer = tf.placeholder(tf.float32, [None])
         self.is_train = tf.placeholder(tf.bool)
         # self.dropout_keep_prob = tf.placeholder(tf.float32)
 
@@ -406,7 +406,7 @@ class RCModel(object):
         self.doc_loss = tf.reduce_mean(tf.square(labels-self.passage_score))
 
         # 计算一个均方差
-        # self.can_loss = tf.reduce_mean(tf.square(self.can_answer-self.can_answer_score))
+        self.can_loss = tf.reduce_mean(tf.square(self.can_answer-self.can_answer_score))
 
         self.print_docloss = tf.reduce_mean(self.doc_loss)
         self.print_ansloss = tf.reduce_mean(tf.add(self.start_loss, self.end_loss))
@@ -414,7 +414,7 @@ class RCModel(object):
         self.all_params = tf.trainable_variables()
         # self.loss = tf.reduce_mean(tf.add(self.start_loss, self.end_loss))
         self.loss = tf.reduce_mean(tf.add(tf.add(self.start_loss, self.end_loss), self.doc_loss))
-        # self.loss += self.can_loss
+        self.loss += self.can_loss
         if self.weight_decay > 0:
             with tf.variable_scope('l2_loss'):
                 l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in self.all_params])
@@ -447,7 +447,7 @@ class RCModel(object):
         pad_id = self.vocab.get_id(self.vocab.pad_token)
         total_num, total_loss = 0, 0
         log_every_n_batch, n_batch_loss = 100, 0
-        n_batch_doc, n_batch_ans = 0, 0
+        n_batch_doc, n_batch_ans, n_batch_can = 0, 0, 0
         for bitx, batch in enumerate(train_batches, 1):     # 这里才开始真正使用train_batches， 每次调用batch size个
             feed_dict = {self.p['data']: batch['passage_token_ids'],
                          self.q['data']: batch['question_token_ids'],
@@ -457,24 +457,27 @@ class RCModel(object):
                          self.end_label: batch['end_id'],
                          self.answer_index: batch['answer_index'],
                          self.answer_loss: batch['answer_loss'],
-                         self.can_loss: batch['can_answer'],
+                         self.can_answer: batch['can_answer'],
                          self.is_train: True}
             # _, loss = self.sess.run([self.train_op, self.loss], feed_dict)
-            _, loss, doc_loss, answer_loss = self.sess.run([self.train_op, self.loss, self.print_docloss, self.print_ansloss], feed_dict)
+            _, loss, doc_loss, answer_loss, can_loss = self.sess.run([self.train_op, self.loss, self.print_docloss,
+                                                            self.print_ansloss, self.can_loss], feed_dict)
             total_loss += loss * len(batch['raw_data'])
             total_num += len(batch['raw_data'])
             n_batch_loss += loss
 
             n_batch_doc += doc_loss
             n_batch_ans += answer_loss
+            n_batch_can += can_loss
             # total_loss_doc += doc_loss
             if log_every_n_batch > 0 and bitx % log_every_n_batch == 0:
-                self.logger.info('Average loss from batch {} to {} is {} and doc is {}, ans is {}'.format(
+                self.logger.info('Average loss from batch {} to {} is {} and doc is {}, ans is {}, can_loss is {}'.format(
                     bitx - log_every_n_batch + 1, bitx, n_batch_loss / log_every_n_batch,
-                    n_batch_doc / log_every_n_batch, n_batch_ans / log_every_n_batch))
+                    n_batch_doc / log_every_n_batch, n_batch_ans / log_every_n_batch, n_batch_can / log_every_n_batch))
                 n_batch_loss = 0
                 n_batch_doc = 0
                 n_batch_ans = 0
+                n_batch_can = 0
                 if bitx % 800 == 0:
                     self.logger.info('Evaluating the model after epoch {} iters {}'.format(epoch, bitx))
                     if data.dev_set is not None:
@@ -551,10 +554,10 @@ class RCModel(object):
                          self.end_label: batch['end_id'],
                          self.answer_index: batch['answer_index'],
                          self.answer_loss: batch['answer_loss'],
-                         self.can_loss: batch['can_answer'],
+                         self.can_answer: batch['can_answer'],
                          self.is_train: None}
-            start_probs, end_probs, loss = self.sess.run([self.start_probs,
-                                                          self.end_probs, self.loss], feed_dict)
+            start_probs, end_probs, can_answer, loss = self.sess.run([self.start_probs,
+                                                          self.end_probs, self.can_answer_score, self.loss], feed_dict)
 
             # start_probs, end_probs, can_answer, loss = self.sess.run([self.start_probs, self.end_probs,
             #                                                           self.can_answer_score, self.loss], feed_dict)
@@ -567,24 +570,24 @@ class RCModel(object):
             total_num += len(batch['raw_data'])
 
             padded_p_len = len(batch['passage_token_ids'][0])
-            for sample, start_prob, end_prob in zip(batch['raw_data'], start_probs, end_probs):
-
-                best_answer = self.find_best_answer(sample, start_prob, end_prob, padded_p_len)
-                if save_full_info:
-                    sample['pred_answers'] = [best_answer]
-                    pred_answers.append(sample)
-                else:
-                    pred_answers.append({'question_id': sample['question_id'],
-                                         'question_type': sample['question_type'],
-                                         'answers': [best_answer],
-                                         'entity_answers': [[]],
-                                         'yesno_answers': []})
-                if 'answers' in sample:
-                    ref_answers.append({'question_id': sample['question_id'],
-                                         'question_type': sample['question_type'],
-                                         'answers': sample['answers'],
-                                         'entity_answers': [[]],
-                                         'yesno_answers': []})
+            for sample, start_prob, end_prob, can in zip(batch['raw_data'], start_probs, end_probs, can_answer):
+                if can:
+                    best_answer = self.find_best_answer(sample, start_prob, end_prob, padded_p_len)
+                    if save_full_info:
+                        sample['pred_answers'] = [best_answer]
+                        pred_answers.append(sample)
+                    else:
+                        pred_answers.append({'question_id': sample['question_id'],
+                                             'question_type': sample['question_type'],
+                                             'answers': [best_answer],
+                                             'entity_answers': [[]],
+                                             'yesno_answers': []})
+                    if 'answers' in sample:
+                        ref_answers.append({'question_id': sample['question_id'],
+                                             'question_type': sample['question_type'],
+                                             'answers': sample['answers'],
+                                             'entity_answers': [[]],
+                                             'yesno_answers': []})
 
         if result_dir is not None and result_prefix is not None:
             result_file = os.path.join(result_dir, result_prefix + '.json')
