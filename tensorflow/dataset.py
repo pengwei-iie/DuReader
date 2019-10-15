@@ -68,15 +68,15 @@ class BRCDataset(object):
         for lidx, line in enumerate(list):   # 对每一个样本（多文档多段落）
             sample = json.loads(line.strip())
             sample['can_answer'] = []
-            if train:
-                if len(sample['answer_spans']) != 0:
-                    sample['can_answer'].extend([1])
-                else:
-                    sample['can_answer'].extend([0])
-                    # continue
-                if len(sample['answer_spans']) != 0 and sample['answer_spans'][0][1] >= self.max_p_len:
-                    # 对选出来的【【15, 65】】，过滤掉大于最大长度的文档
-                    continue
+            # if train:
+            if len(sample['answer_spans']) != 0:
+                sample['can_answer'].extend([1])
+            else:
+                sample['can_answer'].extend([0])
+                # continue
+            if len(sample['answer_spans']) != 0 and sample['answer_spans'][0][1] >= self.max_p_len:
+                # 对选出来的【【15, 65】】，过滤掉大于最大长度的文档
+                continue
 
             if 'answer_docs' in sample:
                 sample['answer_passages'] = sample['answer_docs']
