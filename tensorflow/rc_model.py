@@ -33,6 +33,7 @@ from layers.basic_rnn import rnn
 from layers.match_layer import MatchLSTMLayer
 from layers.match_layer import AttentionFlowMatchLayer
 from layers.pointer_net import PointerNetDecoder
+from sklearn.metrics import classification_report
 import tfu
 
 
@@ -361,12 +362,13 @@ class RCModel(object):
                                       self.dropout_keep_prob, False, 'summ2pone', True)
                 print('self.not_train')
             # 抽出来的one passage 维度为 (batch, tokens, hidden)，can_answer (batch, hidden)
-            tmp = tf.tanh(tfu.dense(
-                tf.concat([can_answer, self.question_level_emb], axis=1), 1, use_bias=False, scope='q_and'))
-            # (batch) 用于计算loss
-            can_answer_score = tf.squeeze(tfu.dense(tmp, 1, False, 'second_den'), axis=1)
-            self.can_answer_score = tf.sigmoid(can_answer_score)
-
+            # tmp = tf.tanh(tfu.dense(
+            #     tf.concat([can_answer, self.question_level_emb], axis=1), 1, use_bias=False, scope='q_and'))
+            # # (batch) 用于计算loss
+            # can_answer_score = tf.squeeze(tfu.dense(tmp, 1, False, 'second_den'), axis=1)
+            # self.can_answer_score = tf.sigmoid(can_answer_score)
+            simlarity = tf.matmul(can_answer, self.question_level_emb, transpose_b=True)
+            self.can_answer_score = tf.sigmoid(tf.diag_part(simlarity))
 
             concat_passage_encodes = one_passage  # fina_passage: b*5, len_p, hidden*2 --> b, 5*len_p, hidden*2
             # concat_passage_encodes = tf.reshape(
@@ -567,6 +569,9 @@ class RCModel(object):
             # 计算的can——answer中大于0.5的置1，否则为0
             can_int = np.where(can_answer > 0.5, 1, 0)
             error += np.sum(np.power((batch['can_answer'] - can_int), 2))
+            # target_names = ['class 0', 'class 1']
+            # print(classification_report(batch['can_answer'], can_int, target_names=target_names))
+
             total_loss += loss * len(batch['raw_data'])
             total_num += len(batch['raw_data'])
 
