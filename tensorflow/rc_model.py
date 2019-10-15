@@ -545,6 +545,7 @@ class RCModel(object):
         """
         pred_answers, ref_answers = [], []
         total_loss, total_num = 0, 0
+        error = 0
         for b_itx, batch in enumerate(eval_batches):
             feed_dict = {self.p['data']: batch['passage_token_ids'],
                          self.q['data']: batch['question_token_ids'],
@@ -556,21 +557,21 @@ class RCModel(object):
                          self.answer_loss: batch['answer_loss'],
                          self.can_answer: batch['can_answer'],
                          self.is_train: None}
-            start_probs, end_probs, can_answer, loss = self.sess.run([self.start_probs,
-                                                          self.end_probs, self.can_answer_score, self.loss], feed_dict)
+            # start_probs, end_probs, loss = self.sess.run([self.start_probs,
+            #                                               self.end_probs, self.loss], feed_dict)
 
-            # start_probs, end_probs, can_answer, loss = self.sess.run([self.start_probs, self.end_probs,
-            #                                                           self.can_answer_score, self.loss], feed_dict)
+            start_probs, end_probs, can_answer, loss = self.sess.run([self.start_probs, self.end_probs,
+                                                                      self.can_answer_score, self.loss], feed_dict)
+            # return start_probs:(batch, tokens) 根据can——answer index抽取出来能够回答的问题
 
-            # return (batch, tokens) 根据can——answer index抽取出来能够回答的问题
-
-            # 先计算一下计算的can——answer和真是下标的准确率
-
+            # 计算的can——answer中大于0.5的置1，否则为0
+            can_int = np.where(can_answer > 0.5, 1, 0)
+            error += np.sum(np.power((self.can_answer - can_int), 2))
             total_loss += loss * len(batch['raw_data'])
             total_num += len(batch['raw_data'])
 
             padded_p_len = len(batch['passage_token_ids'][0])
-            for sample, start_prob, end_prob, can in zip(batch['raw_data'], start_probs, end_probs, can_answer):
+            for sample, start_prob, end_prob, can in zip(batch['raw_data'], start_probs, end_probs, can_int):
                 if can:
                     best_answer = self.find_best_answer(sample, start_prob, end_prob, padded_p_len)
                     if save_full_info:
@@ -599,6 +600,7 @@ class RCModel(object):
 
         # this average loss is invalid on test set, since we don't have true start_id and end_id
         ave_loss = 1.0 * total_loss / total_num
+        ave_loss = 1.0 * error / total_num
         # compute the bleu and rouge scores if reference answers is provided
         if len(ref_answers) > 0:
             pred_dict, ref_dict = {}, {}
