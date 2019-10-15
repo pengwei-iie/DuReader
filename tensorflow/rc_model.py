@@ -566,7 +566,7 @@ class RCModel(object):
 
             # 计算的can——answer中大于0.5的置1，否则为0
             can_int = np.where(can_answer > 0.5, 1, 0)
-            error += np.sum(np.power((self.can_answer - can_int), 2))
+            error += np.sum(np.power((batch['can_answer'] - can_int), 2))
             total_loss += loss * len(batch['raw_data'])
             total_num += len(batch['raw_data'])
 
