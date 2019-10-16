@@ -337,11 +337,11 @@ class RCModel(object):
                 one_passage = tf.gather_nd(tf.reshape(self.fuse_p_encodes,
                                                       [batch_size, -1, tf.shape(self.p_emb)[1], 2 * self.hidden_size]),
                                            self.answer_index)
-                # mask = tf.gather_nd(tf.reshape(self.p['mask'],
-                #                                [batch_size, -1, tf.shape(self.p_emb)[1]]),
-                #                            self.answer_index)
-                # can_answer, _ = tfu.summ(one_passage, self.hidden_size, mask,
-                #                       self.dropout_keep_prob, True, 'summ2pone', True)
+                mask = tf.gather_nd(tf.reshape(self.p['mask'],
+                                               [batch_size, -1, tf.shape(self.p_emb)[1]]),
+                                           self.answer_index)
+                can_answer, _ = tfu.summ(one_passage, self.hidden_size, mask,
+                                      self.dropout_keep_prob, True, 'summ2pone', True)
                 print('self.is_train')
             else:
                 self.logger.info('not_train')
@@ -355,21 +355,21 @@ class RCModel(object):
                                                       [batch_size, -1,
                                                        tf.shape(self.p_emb)[1], 2 * self.hidden_size]),
                                            self.answer_index)
-                # mask = tf.gather_nd(tf.reshape(self.p['mask'],
-                #                                [batch_size, -1, tf.shape(self.p_emb)[1]]),
-                #                     doc_index)
-                # can_answer, _ = tfu.summ(one_passage, self.hidden_size, mask,
-                #                       self.dropout_keep_prob, False, 'summ2pone', True)
+                mask = tf.gather_nd(tf.reshape(self.p['mask'],
+                                               [batch_size, -1, tf.shape(self.p_emb)[1]]),
+                                    doc_index)
+                can_answer, _ = tfu.summ(one_passage, self.hidden_size, mask,
+                                      self.dropout_keep_prob, False, 'summ2pone', True)
                 print('self.not_train')
             # 抽出来的one passage 维度为 (batch, tokens, hidden)，can_answer (batch, hidden)
-            # tmp = tf.tanh(tfu.dense(
-            #     tf.concat([can_answer, self.question_level_emb], axis=1), 1, use_bias=False, scope='q_and'))
-            # # (batch) 用于计算loss
-            # can_answer_score = tf.squeeze(tfu.dense(tmp, 1, False, 'second_den'), axis=1)
-            # self.can_answer_score = tf.sigmoid(can_answer_score)
-            # simlarity = tf.matmul(can_answer, self.question_level_emb, transpose_b=True)
-            # simlarity = tf.nn.softmax(simlarity)
-            # self.can_answer_score = tf.sigmoid(tf.diag_part(simlarity))
+            tmp = tf.tanh(tfu.dense(
+                tf.concat([can_answer, self.question_level_emb], axis=1), 1, use_bias=False, scope='q_and'))
+            # (batch) 用于计算loss
+            can_answer_score = tf.squeeze(tfu.dense(tmp, 1, False, 'second_den'), axis=1)
+            self.can_answer_score = tf.sigmoid(can_answer_score)
+            simlarity = tf.matmul(can_answer, self.question_level_emb, transpose_b=True)
+            simlarity = tf.nn.softmax(simlarity)
+            self.can_answer_score = tf.sigmoid(tf.diag_part(simlarity))
 
             concat_passage_encodes = one_passage  # fina_passage: b*5, len_p, hidden*2 --> b, 5*len_p, hidden*2
             # concat_passage_encodes = tf.reshape(
@@ -409,7 +409,7 @@ class RCModel(object):
         self.doc_loss = 2*tf.reduce_mean(tf.square(labels-self.passage_score))
 
         # 计算一个均方差
-        # self.can_loss = 4 * tf.reduce_mean(tf.square(self.can_answer-self.can_answer_score))
+        self.can_loss = 4 * tf.reduce_mean(tf.square(self.can_answer-self.can_answer_score))
 
         self.print_docloss = tf.reduce_mean(self.doc_loss)
         self.print_ansloss = tf.reduce_mean(tf.add(self.start_loss, self.end_loss))
