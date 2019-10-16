@@ -337,11 +337,11 @@ class RCModel(object):
                 one_passage = tf.gather_nd(tf.reshape(self.fuse_p_encodes,
                                                       [batch_size, -1, tf.shape(self.p_emb)[1], 2 * self.hidden_size]),
                                            self.answer_index)
-                mask = tf.gather_nd(tf.reshape(self.p['mask'],
-                                               [batch_size, -1, tf.shape(self.p_emb)[1]]),
-                                           self.answer_index)
-                can_answer, _ = tfu.summ(one_passage, self.hidden_size, mask,
-                                      self.dropout_keep_prob, True, 'summ2pone', True)
+                # mask = tf.gather_nd(tf.reshape(self.p['mask'],
+                #                                [batch_size, -1, tf.shape(self.p_emb)[1]]),
+                #                            self.answer_index)
+                # can_answer, _ = tfu.summ(one_passage, self.hidden_size, mask,
+                #                       self.dropout_keep_prob, True, 'summ2pone', True)
                 print('self.is_train')
             else:
                 self.logger.info('not_train')
@@ -354,12 +354,12 @@ class RCModel(object):
                 one_passage = tf.gather_nd(tf.reshape(self.fuse_p_encodes,
                                                       [batch_size, -1,
                                                        tf.shape(self.p_emb)[1], 2 * self.hidden_size]),
-                                           doc_index)
-                mask = tf.gather_nd(tf.reshape(self.p['mask'],
-                                               [batch_size, -1, tf.shape(self.p_emb)[1]]),
-                                    doc_index)
-                can_answer, _ = tfu.summ(one_passage, self.hidden_size, mask,
-                                      self.dropout_keep_prob, False, 'summ2pone', True)
+                                           self.answer_index)
+                # mask = tf.gather_nd(tf.reshape(self.p['mask'],
+                #                                [batch_size, -1, tf.shape(self.p_emb)[1]]),
+                #                     doc_index)
+                # can_answer, _ = tfu.summ(one_passage, self.hidden_size, mask,
+                #                       self.dropout_keep_prob, False, 'summ2pone', True)
                 print('self.not_train')
             # 抽出来的one passage 维度为 (batch, tokens, hidden)，can_answer (batch, hidden)
             # tmp = tf.tanh(tfu.dense(
@@ -367,8 +367,9 @@ class RCModel(object):
             # # (batch) 用于计算loss
             # can_answer_score = tf.squeeze(tfu.dense(tmp, 1, False, 'second_den'), axis=1)
             # self.can_answer_score = tf.sigmoid(can_answer_score)
-            simlarity = tf.matmul(can_answer, self.question_level_emb, transpose_b=True)
-            self.can_answer_score = tf.sigmoid(tf.diag_part(simlarity))
+            # simlarity = tf.matmul(can_answer, self.question_level_emb, transpose_b=True)
+            # simlarity = tf.nn.softmax(simlarity)
+            # self.can_answer_score = tf.sigmoid(tf.diag_part(simlarity))
 
             concat_passage_encodes = one_passage  # fina_passage: b*5, len_p, hidden*2 --> b, 5*len_p, hidden*2
             # concat_passage_encodes = tf.reshape(
@@ -405,10 +406,10 @@ class RCModel(object):
 
         # 改成均方差试试
         labels = tf.one_hot(self.answer_loss, tf.shape(self.passage_score)[1], axis=1)
-        self.doc_loss = tf.reduce_mean(tf.square(labels-self.passage_score))
+        self.doc_loss = 2*tf.reduce_mean(tf.square(labels-self.passage_score))
 
         # 计算一个均方差
-        self.can_loss = tf.reduce_mean(tf.square(self.can_answer-self.can_answer_score))
+        # self.can_loss = 4 * tf.reduce_mean(tf.square(self.can_answer-self.can_answer_score))
 
         self.print_docloss = tf.reduce_mean(self.doc_loss)
         self.print_ansloss = tf.reduce_mean(tf.add(self.start_loss, self.end_loss))
@@ -416,7 +417,7 @@ class RCModel(object):
         self.all_params = tf.trainable_variables()
         # self.loss = tf.reduce_mean(tf.add(self.start_loss, self.end_loss))
         self.loss = tf.reduce_mean(tf.add(tf.add(self.start_loss, self.end_loss), self.doc_loss))
-        self.loss += self.can_loss
+        # self.loss += self.can_loss
         if self.weight_decay > 0:
             with tf.variable_scope('l2_loss'):
                 l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in self.all_params])
@@ -570,7 +571,7 @@ class RCModel(object):
             can_int = np.where(can_answer > 0.5, 1, 0)
             error += np.sum(np.power((batch['can_answer'] - can_int), 2))
             # target_names = ['class 0', 'class 1']
-            # print(classification_report(batch['can_answer'], can_int, target_names=target_names))
+            print(classification_report(batch['can_answer'], can_int))
 
             total_loss += loss * len(batch['raw_data'])
             total_num += len(batch['raw_data'])
