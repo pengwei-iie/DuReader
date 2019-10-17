@@ -151,7 +151,7 @@ class PointerNetDecoder(object):
         Returns:
             the probs of evary position to be start and end of the answer
         """
-        with tf.variable_scope('pn_decoder'):
+        with tf.variable_scope('pn_decoder', reuse=tf.AUTO_REUSE):
             fake_inputs = tf.zeros([tf.shape(passage_vectors)[0], 2, 1])    # (batch, 2, 1)
             sequence_len = tf.tile([2], [tf.shape(passage_vectors)[0]])     # 一维的，batch个32
             if init_with_question:
