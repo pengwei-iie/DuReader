@@ -588,6 +588,9 @@ class RCModel(object):
             # error += np.sum(np.power((batch['can_answer'] - can_int), 2))
             # 这个是算的预测的文档准不准
             error += np.sum(np.power((batch['answer_loss'] - doc_index), 2))
+
+            print('real: ', batch['answer_loss'])
+            print('pred: ', doc_index)
             # target_names = ['class 0', 'class 1']
             # print(classification_report(batch['can_answer'], can_int))
 
