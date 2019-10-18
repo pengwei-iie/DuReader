@@ -337,16 +337,16 @@ class RCModel(object):
             one_passage_train = tf.gather_nd(tf.reshape(self.fuse_p_encodes,
                                                         [batch_size, -1, tf.shape(self.p_emb)[1], 2 * self.hidden_size]),
                                        self.answer_index)
-            # mask_train = tf.gather_nd(tf.reshape(self.p['mask'],
-            #                                      [batch_size, -1, tf.shape(self.p_emb)[1]]),
-            #                            self.answer_index)
-            # can_answer_train, _ = tfu.summ(one_passage_train, self.hidden_size, mask_train,
-            #                                self.dropout_keep_prob, True, 'summ2pone_train', True)
-            # tmp_train = tf.tanh(tfu.dense(
-            #     tf.concat([can_answer_train, self.question_level_emb], axis=1), 1, use_bias=False, scope='q_and_train'))
-            #
-            # can_answer_score_train = tf.squeeze(tfu.dense(tmp_train, 1, False, 'second_den_train'), axis=1)
-            # self.can_answer_score_train = tf.sigmoid(can_answer_score_train)
+            mask_train = tf.gather_nd(tf.reshape(self.p['mask'],
+                                                 [batch_size, -1, tf.shape(self.p_emb)[1]]),
+                                       self.answer_index)
+            can_answer_train, _ = tfu.summ(one_passage_train, self.hidden_size, mask_train,
+                                           self.dropout_keep_prob, True, 'summ2pone_train', True)
+            tmp_train = tf.tanh(tfu.dense(
+                tf.concat([can_answer_train, self.question_level_emb], axis=1), 1, use_bias=False, scope='q_and_train'))
+
+            can_answer_score_train = tf.squeeze(tfu.dense(tmp_train, 1, False, 'second_den_train'), axis=1)
+            self.can_answer_score_train = tf.sigmoid(can_answer_score_train)
             print('self.is_train')
             # else:
 
@@ -360,23 +360,24 @@ class RCModel(object):
                                                       [batch_size, -1,
                                                        tf.shape(self.p_emb)[1], 2 * self.hidden_size]),
                                            doc_index)
-            # mask = tf.gather_nd(tf.reshape(self.p['mask'],
-            #                                [batch_size, -1, tf.shape(self.p_emb)[1]]),
-            #                     doc_index)
-            # can_answer_pre, _ = tfu.summ(one_passage_pre, self.hidden_size, mask,
-            #                              self.dropout_keep_prob, False, 'summ2pone_pre', True)
+            mask = tf.gather_nd(tf.reshape(self.p['mask'],
+                                           [batch_size, -1, tf.shape(self.p_emb)[1]]),
+                                doc_index)
+            can_answer_pre, _ = tfu.summ(one_passage_pre, self.hidden_size, mask,
+                                         self.dropout_keep_prob, False, 'summ2pone_pre', True)
 
             print('self.not_train')
 
             # 抽出来的one passage 维度为 (batch, tokens, hidden)，can_answer (batch, hidden)
 
-            # tmp_pre = tf.tanh(tfu.dense(
-            #     tf.concat([can_answer_pre, self.question_level_emb], axis=1), 1, use_bias=False, scope='q_and_pre'))
-            # # (batch) 用于计算loss
-            # can_answer_score_pre = tf.squeeze(tfu.dense(tmp_pre, 1, False, 'second_den_pre'), axis=1)
-            # self.can_answer_score_pre = tf.sigmoid(can_answer_score_pre)
 
-            # 计算的是点积，和上面的方式选一种
+            tmp_pre = tf.tanh(tfu.dense(
+                tf.concat([can_answer_pre, self.question_level_emb], axis=1), 1, use_bias=False, scope='q_and_pre'))
+            # (batch) 用于计算loss
+
+            can_answer_score_pre = tf.squeeze(tfu.dense(tmp_pre, 1, False, 'second_den_pre'), axis=1)
+
+            self.can_answer_score_pre = tf.sigmoid(can_answer_score_pre)
             # simlarity = tf.matmul(can_answer, self.question_level_emb, transpose_b=True)
             # simlarity = tf.nn.softmax(simlarity)
             # self.can_answer_score = tf.sigmoid(tf.diag_part(simlarity))
@@ -423,7 +424,7 @@ class RCModel(object):
         self.doc_loss = 8 * tf.reduce_mean(tf.square(labels-self.passage_score))
 
         # 计算一个均方差
-        # self.can_loss = 4 * tf.reduce_mean(tf.square(self.can_answer-self.can_answer_score_train))
+        self.can_loss = 4 * tf.reduce_mean(tf.square(self.can_answer-self.can_answer_score_train))
 
         self.print_docloss = tf.reduce_mean(self.doc_loss)
         self.print_ansloss = tf.reduce_mean(tf.add(self.start_loss, self.end_loss))
@@ -431,7 +432,7 @@ class RCModel(object):
         self.all_params = tf.trainable_variables()
         # self.loss = tf.reduce_mean(tf.add(self.start_loss, self.end_loss))
         self.loss = tf.reduce_mean(tf.add(self.start_loss, self.end_loss))
-        # self.loss += self.can_loss
+        self.loss += self.can_loss
         self.loss += self.doc_loss
         if self.weight_decay > 0:
             with tf.variable_scope('l2_loss'):
@@ -478,17 +479,15 @@ class RCModel(object):
                          self.can_answer: batch['can_answer'],
                          self.is_train: True}
             # _, loss = self.sess.run([self.train_op, self.loss], feed_dict)
-            _, loss, doc_loss, answer_loss = self.sess.run([self.train_op, self.loss, self.print_docloss,
-                                                                      self.print_ansloss], feed_dict)
-            # _, loss, doc_loss, answer_loss, can_loss = self.sess.run([self.train_op, self.loss, self.print_docloss,
-            #                                                 self.print_ansloss, self.can_loss], feed_dict)
+            _, loss, doc_loss, answer_loss, can_loss = self.sess.run([self.train_op, self.loss, self.print_docloss,
+                                                            self.print_ansloss, self.can_loss], feed_dict)
             total_loss += loss * len(batch['raw_data'])
             total_num += len(batch['raw_data'])
             n_batch_loss += loss
 
             n_batch_doc += doc_loss
             n_batch_ans += answer_loss
-            # n_batch_can += can_loss
+            n_batch_can += can_loss
             if log_every_n_batch > 0 and bitx % log_every_n_batch == 0:
                 self.logger.info('Average loss from batch {} to {} is {} and doc is {}, ans is {}, can_loss is {}'.format(
                     bitx - log_every_n_batch + 1, bitx, n_batch_loss / log_every_n_batch,
@@ -497,7 +496,7 @@ class RCModel(object):
                 n_batch_doc = 0
                 n_batch_ans = 0
                 n_batch_can = 0
-                if bitx % 800 == 0:
+                if bitx % 200 == 0:
                     self.logger.info('Evaluating the model after epoch {} iters {}'.format(epoch, bitx))
                     if data.dev_set is not None:
                         eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False, training=False)
@@ -579,22 +578,16 @@ class RCModel(object):
             # start_probs, end_probs, loss = self.sess.run([self.start_probs,
             #                                               self.end_probs, self.loss], feed_dict)
 
-            start_probs, end_probs, loss, doc_index = self.sess.run(
-                [self.start_probs_pre, self.end_probs_pre, self.loss, self.doc_index], feed_dict)
-
-            # start_probs, end_probs, can_answer, loss, doc_index = self.sess.run([self.start_probs_pre, self.end_probs_pre,
-            #                                                           self.can_answer_score_pre, self.loss, self.doc_index], feed_dict)
+            start_probs, end_probs, can_answer, loss, doc_index = self.sess.run([self.start_probs_pre, self.end_probs_pre,
+                                                                      self.can_answer_score_pre, self.loss, self.doc_index], feed_dict)
             # return start_probs:(batch, tokens) 根据can——answer index抽取出来能够回答的问题
 
             # 计算的can——answer中大于0.5的置1，否则为0
-            # can_int = np.where(can_answer > 0.5, 1, 0)
+            can_int = np.where(can_answer > 0.5, 1, 0)
             # 这个是计算的是否回答准不准
             # error += np.sum(np.power((batch['can_answer'] - can_int), 2))
             # 这个是算的预测的文档准不准
-            error += np.sum([doc_index[i] != batch['answer_loss'][i] for i in range(len(doc_index))])
-            # data = [doc_index[i] != batch['answer_loss'][i] for i in range(len(doc_index))]
-            print('real: ', batch['answer_loss'])
-            print('pred: ', doc_index)
+            error += np.sum(np.power((batch['answer_loss'] - doc_index), 2))
             # target_names = ['class 0', 'class 1']
             # print(classification_report(batch['can_answer'], can_int))
 
@@ -602,25 +595,24 @@ class RCModel(object):
             total_num += len(batch['raw_data'])
 
             padded_p_len = len(batch['passage_token_ids'][0])
-            # for sample, start_prob, end_prob, can in zip(batch['raw_data'], start_probs, end_probs, can_int):
-            for sample, start_prob, end_prob in zip(batch['raw_data'], start_probs, end_probs):
-                # if can:
-                best_answer = self.find_best_answer(sample, start_prob, end_prob, padded_p_len)
-                if save_full_info:
-                    sample['pred_answers'] = [best_answer]
-                    pred_answers.append(sample)
-                else:
-                    pred_answers.append({'question_id': sample['question_id'],
-                                         'question_type': sample['question_type'],
-                                         'answers': [best_answer],
-                                         'entity_answers': [[]],
-                                         'yesno_answers': []})
-                if 'answers' in sample:
-                    ref_answers.append({'question_id': sample['question_id'],
-                                         'question_type': sample['question_type'],
-                                         'answers': sample['answers'],
-                                         'entity_answers': [[]],
-                                         'yesno_answers': []})
+            for sample, start_prob, end_prob, can in zip(batch['raw_data'], start_probs, end_probs, can_int):
+                if can:
+                    best_answer = self.find_best_answer(sample, start_prob, end_prob, padded_p_len)
+                    if save_full_info:
+                        sample['pred_answers'] = [best_answer]
+                        pred_answers.append(sample)
+                    else:
+                        pred_answers.append({'question_id': sample['question_id'],
+                                             'question_type': sample['question_type'],
+                                             'answers': [best_answer],
+                                             'entity_answers': [[]],
+                                             'yesno_answers': []})
+                    if 'answers' in sample:
+                        ref_answers.append({'question_id': sample['question_id'],
+                                             'question_type': sample['question_type'],
+                                             'answers': sample['answers'],
+                                             'entity_answers': [[]],
+                                             'yesno_answers': []})
 
         if result_dir is not None and result_prefix is not None:
             result_file = os.path.join(result_dir, result_prefix + '.json')
@@ -632,7 +624,7 @@ class RCModel(object):
 
         # this average loss is invalid on test set, since we don't have true start_id and end_id
         ave_loss = 1.0 * total_loss / total_num
-        ave_error = 1.0 * error / total_num
+        ave_loss = 1.0 * error / total_num
         # compute the bleu and rouge scores if reference answers is provided
         if len(ref_answers) > 0:
             pred_dict, ref_dict = {}, {}
@@ -644,7 +636,6 @@ class RCModel(object):
             bleu_rouge = compute_bleu_rouge(pred_dict, ref_dict)
         else:
             bleu_rouge = None
-        print('aveage_doc_index_error: ', ave_error)
         return ave_loss, bleu_rouge
 
     def find_best_answer(self, sample, start_prob, end_prob, padded_p_len):
