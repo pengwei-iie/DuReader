@@ -350,16 +350,16 @@ class RCModel(object):
             print('self.is_train')
             # else:
 
-            # self.doc_index = tf.argmax(self.passage_score, -1, output_type=tf.int32)       # batch
-            # # fixme: 对doc进行维度变换
-            # # doc_index = tf.expand_dims(doc_index, 1)
-            # index = tf.expand_dims(tf.range(tf.shape(self.doc_index)[0]), 1)
-            # doc_index = tf.expand_dims(self.doc_index, 1)
-            # doc_index = tf.concat([index, doc_index], axis=1)
-            # one_passage_pre = tf.gather_nd(tf.reshape(self.fuse_p_encodes,
-            #                                           [batch_size, -1,
-            #                                            tf.shape(self.p_emb)[1], 2 * self.hidden_size]),
-            #                                doc_index)
+            self.doc_index = tf.argmax(self.passage_score, -1, output_type=tf.int32)       # batch
+            # fixme: 对doc进行维度变换
+            # doc_index = tf.expand_dims(doc_index, 1)
+            index = tf.expand_dims(tf.range(tf.shape(self.doc_index)[0]), 1)
+            doc_index = tf.expand_dims(self.doc_index, 1)
+            doc_index = tf.concat([index, doc_index], axis=1)
+            one_passage_pre = tf.gather_nd(tf.reshape(self.fuse_p_encodes,
+                                                      [batch_size, -1,
+                                                       tf.shape(self.p_emb)[1], 2 * self.hidden_size]),
+                                           doc_index)
             # mask = tf.gather_nd(tf.reshape(self.p['mask'],
             #                                [batch_size, -1, tf.shape(self.p_emb)[1]]),
             #                     doc_index)
@@ -369,14 +369,14 @@ class RCModel(object):
             print('self.not_train')
 
             # 抽出来的one passage 维度为 (batch, tokens, hidden)，can_answer (batch, hidden)
-
+            # 1\
             # tmp_pre = tf.tanh(tfu.dense(
             #     tf.concat([can_answer_pre, self.question_level_emb], axis=1), 1, use_bias=False, scope='q_and_pre'))
-            # # (batch) 用于计算loss
+            # (batch) 用于计算loss
             # can_answer_score_pre = tf.squeeze(tfu.dense(tmp_pre, 1, False, 'second_den_pre'), axis=1)
             # self.can_answer_score_pre = tf.sigmoid(can_answer_score_pre)
 
-            # 计算的是点积，和上面的方式选一种
+            # 2\计算的是点积，和上面的方式选一种
             # simlarity = tf.matmul(can_answer, self.question_level_emb, transpose_b=True)
             # simlarity = tf.nn.softmax(simlarity)
             # self.can_answer_score = tf.sigmoid(tf.diag_part(simlarity))
@@ -398,8 +398,8 @@ class RCModel(object):
                                                           no_dup_question_encodes)
 
         # decoder_pre = PointerNetDecoder(self.hidden_size)
-        # self.start_probs_pre, self.end_probs_pre = decoder_train.decode(one_passage_pre,
-        #                                                         no_dup_question_encodes)
+        self.start_probs_pre, self.end_probs_pre = decoder_train.decode(one_passage_pre,
+                                                                no_dup_question_encodes)
 
     def _compute_loss(self):
         """
@@ -417,10 +417,10 @@ class RCModel(object):
 
         self.start_loss = sparse_nll_loss(probs=self.start_probs, labels=self.start_label)
         self.end_loss = sparse_nll_loss(probs=self.end_probs, labels=self.end_label)
-
+        self.doc_loss = sparse_nll_loss(probs=self.passage_score, labels=self.answer_loss)
         # 改成均方差试试
-        labels = tf.one_hot(self.answer_loss, tf.shape(self.passage_score)[1], axis=1)
-        self.doc_loss = 8 * tf.reduce_mean(tf.square(labels-self.passage_score))
+        # labels = tf.one_hot(self.answer_loss, tf.shape(self.passage_score)[1], axis=1)
+        # self.doc_loss = 8 * tf.reduce_mean(tf.square(labels-self.passage_score))
 
         # 计算一个均方差
         # self.can_loss = 4 * tf.reduce_mean(tf.square(self.can_answer-self.can_answer_score_train))
@@ -432,7 +432,7 @@ class RCModel(object):
         # self.loss = tf.reduce_mean(tf.add(self.start_loss, self.end_loss))
         self.loss = tf.reduce_mean(tf.add(self.start_loss, self.end_loss))
         # self.loss += self.can_loss
-        # self.loss += self.doc_loss
+        self.loss += self.print_docloss
         if self.weight_decay > 0:
             with tf.variable_scope('l2_loss'):
                 l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in self.all_params])
@@ -574,11 +574,11 @@ class RCModel(object):
                          self.answer_index: batch['answer_index'],
                          self.answer_loss: batch['answer_loss'],
                          self.can_answer: batch['can_answer']}
-            start_probs, end_probs, loss = self.sess.run([self.start_probs,
-                                                          self.end_probs, self.loss], feed_dict)
+            # start_probs, end_probs, loss = self.sess.run([self.start_probs,
+            #                                               self.end_probs, self.loss], feed_dict)
 
-            # start_probs, end_probs, loss, doc_index = self.sess.run(
-            #     [self.start_probs_pre, self.end_probs_pre, self.loss, self.doc_index], feed_dict)
+            start_probs, end_probs, loss, doc_index = self.sess.run(
+                [self.start_probs_pre, self.end_probs_pre, self.loss, self.doc_index], feed_dict)
 
             # start_probs, end_probs, can_answer, loss, doc_index = self.sess.run([self.start_probs_pre, self.end_probs_pre,
             #                                                           self.can_answer_score_pre, self.loss, self.doc_index], feed_dict)
@@ -589,11 +589,12 @@ class RCModel(object):
             # 这个是计算的是否回答准不准
             # error += np.sum(np.power((batch['can_answer'] - can_int), 2))
             # 这个是算的预测的文档准不准
-            # error += np.sum([doc_index[i] != batch['answer_loss'][i] for i in range(len(doc_index))])
+            error += np.sum([doc_index[i] != batch['answer_loss'][i] for i in range(len(doc_index))])
             # data = [doc_index[i] != batch['answer_loss'][i] for i in range(len(doc_index))]
-            # print('real: ', batch['answer_loss'])
-            # print('pred: ', doc_index)
-            # target_names = ['class 0', 'class 1']
+            self.logger.info('real: {}'.format(batch['answer_loss']))
+            self.logger.info('pred: {}'.format(doc_index))
+            # target_names = ['class 0', 'class 1']0
+
             # print(classification_report(batch['can_answer'], can_int))
 
             total_loss += loss * len(batch['raw_data'])
