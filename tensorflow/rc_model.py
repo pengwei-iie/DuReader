@@ -350,7 +350,7 @@ class RCModel(object):
             print('self.is_train')
             # else:
 
-            # 下面是选出最大的index然后取解码，但是只是选出一篇文章的话，效果并没有太大的提升，而且预测出来的文档都是0基本
+            # 下面是选出最大的index然后取解码，但是只是选出一篇文章的话，效果
             self.doc_index = tf.argmax(self.passage_score, -1, output_type=tf.int32)       # batch
             # fixme: 对doc进行维度变换
             # doc_index = tf.expand_dims(doc_index, 1)
@@ -361,9 +361,6 @@ class RCModel(object):
                                                       [batch_size, -1,
                                                        tf.shape(self.p_emb)[1], 2 * self.hidden_size]),
                                            doc_index)
-            # 需要去mask得分最低的一个文档，保留四篇
-            # self.doc_index = tf.argmin(self.passage_score, -1, output_type=tf.int32)  # batch
-
             # mask = tf.gather_nd(tf.reshape(self.p['mask'],
             #                                [batch_size, -1, tf.shape(self.p_emb)[1]]),
             #                     doc_index)
@@ -429,7 +426,7 @@ class RCModel(object):
         # 计算一个均方差
         # self.can_loss = 4 * tf.reduce_mean(tf.square(self.can_answer-self.can_answer_score_train))
 
-        self.print_docloss = tf.reduce_mean(self.doc_loss)
+        self.print_docloss = 5*tf.reduce_mean(self.doc_loss)
         self.print_ansloss = tf.reduce_mean(tf.add(self.start_loss, self.end_loss))
 
         self.all_params = tf.trainable_variables()
@@ -481,8 +478,8 @@ class RCModel(object):
                          self.answer_loss: batch['answer_loss'],
                          self.can_answer: batch['can_answer']}
             # _, loss = self.sess.run([self.train_op, self.loss], feed_dict)
-            _, loss, doc_loss, answer_loss, score = self.sess.run([self.train_op, self.loss, self.print_docloss,
-                                                                      self.print_ansloss, self.passage_score], feed_dict)
+            _, loss, doc_loss, answer_loss = self.sess.run([self.train_op, self.loss, self.print_docloss,
+                                                                      self.print_ansloss], feed_dict)
             # _, loss, doc_loss, answer_loss, can_loss = self.sess.run([self.train_op, self.loss, self.print_docloss,
             #                                                 self.print_ansloss, self.can_loss], feed_dict)
             total_loss += loss * len(batch['raw_data'])
@@ -496,8 +493,6 @@ class RCModel(object):
                 self.logger.info('Average loss from batch {} to {} is {} and doc is {}, ans is {}, can_loss is {}'.format(
                     bitx - log_every_n_batch + 1, bitx, n_batch_loss / log_every_n_batch,
                     n_batch_doc / log_every_n_batch, n_batch_ans / log_every_n_batch, n_batch_can / log_every_n_batch))
-                self.logger.info('passage_score is {}'.format(score))
-                self.logger.info('passage_score is {}'.format(batch['answer_loss']))
                 n_batch_loss = 0
                 n_batch_doc = 0
                 n_batch_ans = 0
