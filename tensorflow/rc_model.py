@@ -497,6 +497,7 @@ class RCModel(object):
                     bitx - log_every_n_batch + 1, bitx, n_batch_loss / log_every_n_batch,
                     n_batch_doc / log_every_n_batch, n_batch_ans / log_every_n_batch, n_batch_can / log_every_n_batch))
                 self.logger.info('passage_score is {}'.format(score))
+                self.logger.info('passage_score is {}'.format(batch['answer_loss']))
                 n_batch_loss = 0
                 n_batch_doc = 0
                 n_batch_ans = 0
