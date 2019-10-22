@@ -84,6 +84,7 @@ class BRCDataset(object):
             sample['question_tokens'] = sample['segmented_question']
 
             sample['passages'] = []
+            sample['answer_label'] = []
             for d_idx, doc in enumerate(sample['documents']):   # 对每一篇文档处理,如果是训练，直接用最相关的段落；否则使用问题进行计算找到最相关的段落
                 # if not doc['is_selected']:                      # fixme:prepare的时候不需要
                 #     continue
@@ -115,6 +116,10 @@ class BRCDataset(object):
                     for para_info in para_infos[:1]:    # 只取第一个最高的
                         fake_passage_tokens += para_info[0]
                     sample['passages'].append({'passage_tokens': fake_passage_tokens})  # 把最高的那个段落加到sample['passages']
+                if doc['is_selected']:
+                    sample['answer_label'].append(1)
+                else:
+                    sample['answer_label'].append(0)
             data_set.append(sample)
         return data_set
 
@@ -137,6 +142,7 @@ class BRCDataset(object):
                       'answer_index': [],
                       'answer_loss': [],
                       'can_answer': [],
+                      'answer_label': [],
                       'start_id': [],
                       'end_id': []}
         batch_data['raw_data'] = self._load_dataset(batch_data['raw_data'], training)
@@ -159,6 +165,7 @@ class BRCDataset(object):
                     batch_data['question_length'].append(0)
                     batch_data['passage_token_ids'].append([])
                     batch_data['passage_length'].append(0)
+                    sample['answer_label'].extend([0])
             batch_data['can_answer'].extend(sample['can_answer'])
             if training and len(sample['answer_passages']) != 0:
                 # 用于tf.gather_nd
@@ -171,6 +178,7 @@ class BRCDataset(object):
             else:
                 batch_data['answer_index'].append([sidx, 0])
                 batch_data['answer_loss'].extend([-1])
+            batch_data['answer_label'].append(sample['answer_label'])
         batch_data, padded_p_len, padded_q_len = self._dynamic_padding(batch_data, pad_id)
         for sample in batch_data['raw_data']:
             if 'answer_passages' in sample and len(sample['answer_passages']):
