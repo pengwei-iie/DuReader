@@ -33,6 +33,7 @@ from layers.basic_rnn import rnn
 from layers.match_layer import MatchLSTMLayer
 from layers.match_layer import AttentionFlowMatchLayer
 from layers.pointer_net import PointerNetDecoder
+from sklearn.metrics import classification_report
 import tfu
 
 
@@ -69,7 +70,7 @@ class RCModel(object):
         self.layer = args.layer
         self.head = args.head
         self.batch_size = args.batch_size
-        self.is_train = tf.cast(True, tf.bool)
+        # self.is_train = tf.cast(True, tf.bool)
 
         # session info
         sess_config = tf.ConfigProto()
@@ -100,6 +101,7 @@ class RCModel(object):
         self._encode()
         self._match()
         self._fuse()
+        self._passage_encoder()
         # self._self_attention()
 
         # self._transformer()
@@ -128,6 +130,11 @@ class RCModel(object):
         self.q_length = self.q['length']
         self.start_label = tf.placeholder(tf.int32, [None])
         self.end_label = tf.placeholder(tf.int32, [None])
+        self.answer_index = tf.placeholder(tf.int32, [None, 2])
+        self.answer_loss = tf.placeholder(tf.int32, [None])
+        self.can_answer = tf.placeholder(tf.float32, [None])
+        self.real_doc_index = tf.placeholder(tf.float32, [None, None])
+        self.is_train = tf.placeholder(tf.int32)
         # self.dropout_keep_prob = tf.placeholder(tf.float32)
 
     def _embed(self):
@@ -193,6 +200,60 @@ class RCModel(object):
                                          self.hidden_size, layer_num=1)  # 经过双向RNN,变成前向+后向，150+150
         if self.use_dropout:
             self.fuse_p_encodes = tf.nn.dropout(self.fuse_p_encodes, self.dropout_keep_prob)
+
+    def _passage_encoder(self):
+        # passage_mask = tf.reshape(self.p['mask'], [-1, tf.shape(self.p_emb)[1]])
+        # self.fuse_p_encodes  (b*num_p, tokens, hidden)    passage_mask (b*num_p, tokens)
+        # return : (b*num_p, hidden), (b*num_p, tokens, 1)
+        batch_size = tf.shape(self.start_label)[0]
+        passage_level_emb, prob = tfu.summ(self.fuse_p_encodes, self.hidden_size, self.p['mask'],
+                                           self.dropout_keep_prob,
+                                           True, 'summ2sent', True)
+
+        passage_level_emb = tf.reshape(passage_level_emb, [batch_size, -1,
+                                                           self.p_emb.shape.as_list()[-1]])
+
+        # 对question进行一个的表示
+        ques = tf.reshape(
+            self.q_emb,
+            [batch_size, -1, tf.shape(self.sep_q_encodes)[1], 2 * self.hidden_size]
+        )[0:, 0, 0:, 0:]
+        ques_mask = tf.reshape(
+            self.q['mask'],
+            [batch_size, -1, tf.shape(self.sep_q_encodes)[1]]
+        )[0:, 0, 0:]
+        # batch, hidden
+        self.question_level_emb, prob = tfu.summ(ques, self.hidden_size, ques_mask, self.dropout_keep_prob,
+                                            True, 'summ2question', True)
+        # batch, 1, hidden
+        question_level_emb = tf.expand_dims(self.question_level_emb, axis=1)
+        # 经过gate函数
+        # 使用fusion
+        score = tf.matmul(
+            a=tf.nn.relu(tfu.dense(passage_level_emb, 1, use_bias=False, scope="score_b_orderanddiag")),
+            b=tf.nn.relu(tfu.dense(question_level_emb, 1, use_bias=False, scope="score_b_orderanddiag", reuse=True)),
+            transpose_b=True)
+        # 计算attention，得到融合标题的句子表达
+        ques_aware_passage = passage_level_emb * score
+        # 连接向量
+        new_passage = tf.concat([ques_aware_passage, passage_level_emb,
+                                 ques_aware_passage * passage_level_emb, passage_level_emb - ques_aware_passage],
+                                axis=2)
+        # 激活
+        new_passage_tanh = tf.nn.tanh(tfu.dense(new_passage, self.hidden_size * 2, scope="new_sens_dense"))
+        # 利用这个new_sens_dense计算sigmoid
+        gate = tf.nn.sigmoid(tfu.dense(new_passage, 1, scope="gate"))
+        # 得到最后的若干文档的表示
+        self.fina_passage = gate * new_passage_tanh + (1 - gate) * passage_level_emb
+
+        # 开始对文档级别计算得分
+        # batch, num_p, hidden
+        question_level_tile = tf.tile(question_level_emb, [1, tf.shape(self.fina_passage)[1], 1])
+        tmp = tf.tanh(tfu.dense(
+            tf.concat([self.fina_passage, question_level_tile], axis=2), 1, use_bias=False, scope='q_and_p'))
+        # (batch, num_passage) 用于计算loss
+        passage_score = tf.squeeze(tfu.dense(tmp, 1, False, 'second_dense'), axis=2)
+        self.passage_score = tf.sigmoid(passage_score)
 
     # def _self_attention(self):
     #     # 双线性softmax
@@ -272,10 +333,79 @@ class RCModel(object):
         """
         with tf.variable_scope('same_question_concat'):
             batch_size = tf.shape(self.start_label)[0]
-            concat_passage_encodes = tf.reshape(
-                self.fuse_p_encodes,
-                [batch_size, -1, 2 * self.hidden_size]
-            )       # fina_passage: b*5, len_p, hidden --> b, 5*len_p, hidden
+            # self.doc_index = self.passage_score
+            # if self.is_train is not None:
+            # (batch, 500, 300)
+            one_passage_train = tf.gather_nd(tf.reshape(self.fuse_p_encodes,
+                                                        [batch_size, -1, tf.shape(self.p_emb)[1], 2 * self.hidden_size]),
+                                       self.answer_index)
+            # 连接向量 (batch, 500, 300), (b, num_p, 300)
+            whole_info = tf.gather_nd(self.fina_passage, self.answer_index)
+            whole_info = tf.tile(tf.expand_dims(whole_info, 1), [1, tf.shape(self.p_emb)[1], 1])
+            new_passage = tf.concat([one_passage_train, whole_info], axis=2)
+            # 激活
+            final_train = tf.nn.tanh(tfu.dense(new_passage, self.hidden_size * 2, scope="merge_whole"))
+
+            # mask_train = tf.gather_nd(tf.reshape(self.p['mask'],
+            #                                      [batch_size, -1, tf.shape(self.p_emb)[1]]),
+            #                            self.answer_index)
+            # can_answer_train, _ = tfu.summ(one_passage_train, self.hidden_size, mask_train,
+            #                                self.dropout_keep_prob, True, 'summ2pone_train', True)
+            # tmp_train = tf.tanh(tfu.dense(
+            #     tf.concat([can_answer_train, self.question_level_emb], axis=1), 1, use_bias=False, scope='q_and_train'))
+            #
+            # can_answer_score_train = tf.squeeze(tfu.dense(tmp_train, 1, False, 'second_den_train'), axis=1)
+            # self.can_answer_score_train = tf.sigmoid(can_answer_score_train)
+            print('self.is_train')
+            # else:
+
+            # 下面是选出最大的index然后取解码，但是只是选出一篇文章的话，效果并没有太大的提升，而且预测出来的文档都是0基本
+            self.doc_index = tf.argmax(self.passage_score, -1, output_type=tf.int32)       # batch
+            # fixme: 对doc进行维度变换
+            # doc_index = tf.expand_dims(doc_index, 1)
+            index = tf.expand_dims(tf.range(tf.shape(self.doc_index)[0]), 1)
+            doc_index = tf.expand_dims(self.doc_index, 1)
+            doc_index = tf.concat([index, doc_index], axis=1)
+            one_passage_pre = tf.gather_nd(tf.reshape(self.fuse_p_encodes,
+                                                      [batch_size, -1,
+                                                       tf.shape(self.p_emb)[1], 2 * self.hidden_size]),
+                                           doc_index)
+
+            # 连接向量 (batch, 500, 300), (b, num_p, 300)
+            whole_info_pre = tf.gather_nd(self.fina_passage, doc_index)
+            whole_info_pre = tf.tile(tf.expand_dims(whole_info_pre, 1), [1, tf.shape(self.p_emb)[1], 1])
+            new_passage_pre = tf.concat([one_passage_pre, whole_info_pre], axis=2)
+            # 激活
+            final_pre = tf.nn.tanh(tfu.dense(new_passage_pre, self.hidden_size * 2, scope="merge_whole_pre"))
+            # 需要去mask得分最低的一个文档，保留四篇
+            # self.doc_index = tf.argmin(self.passage_score, -1, output_type=tf.int32)  # batch
+
+            # mask = tf.gather_nd(tf.reshape(self.p['mask'],
+            #                                [batch_size, -1, tf.shape(self.p_emb)[1]]),
+            #                     doc_index)
+            # can_answer_pre, _ = tfu.summ(one_passage_pre, self.hidden_size, mask,
+            #                              self.dropout_keep_prob, False, 'summ2pone_pre', True)
+
+            print('self.not_train')
+
+            # 抽出来的one passage 维度为 (batch, tokens, hidden)，can_answer (batch, hidden)
+            # 1\
+            # tmp_pre = tf.tanh(tfu.dense(
+            #     tf.concat([can_answer_pre, self.question_level_emb], axis=1), 1, use_bias=False, scope='q_and_pre'))
+            # (batch) 用于计算loss
+            # can_answer_score_pre = tf.squeeze(tfu.dense(tmp_pre, 1, False, 'second_den_pre'), axis=1)
+            # self.can_answer_score_pre = tf.sigmoid(can_answer_score_pre)
+
+            # 2\计算的是点积，和上面的方式选一种
+            # simlarity = tf.matmul(can_answer, self.question_level_emb, transpose_b=True)
+            # simlarity = tf.nn.softmax(simlarity)
+            # self.can_answer_score = tf.sigmoid(tf.diag_part(simlarity))
+
+            # concat_passage_encodes = one_passage  # fina_passage: b*5, len_p, hidden*2 --> b, 5*len_p, hidden*2
+            # concat_passage_encodes = tf.reshape(
+            #     self.fuse_p_encodes,
+            #     [batch_size, -1, 2 * self.hidden_size]
+            # )       # fina_passage: b*5, len_p, hidden --> b, 5*len_p, hidden
 
             # b, 5, len_q, hidden       [0:, 0, 0:, 0:] 表示只用第一个问题，因为5个问题都是一样的
             no_dup_question_encodes = tf.reshape(
@@ -283,15 +413,19 @@ class RCModel(object):
                 [batch_size, -1, tf.shape(self.sep_q_encodes)[1], 2 * self.hidden_size]
             )[0:, 0, 0:, 0:]
 
-        decoder = PointerNetDecoder(self.hidden_size)
-        self.start_probs, self.end_probs = decoder.decode(concat_passage_encodes,
+        decoder_train = PointerNetDecoder(self.hidden_size)
+        self.start_probs, self.end_probs = decoder_train.decode(final_train,
                                                           no_dup_question_encodes)
+
+        # decoder_pre = PointerNetDecoder(self.hidden_size)
+        self.start_probs_pre, self.end_probs_pre = decoder_train.decode(final_pre,
+                                                                no_dup_question_encodes)
 
     def _compute_loss(self):
         """
         The loss function
         """
-
+        # cross entropy
         def sparse_nll_loss(probs, labels, epsilon=1e-9, scope=None):
             """
             negative log likelyhood loss
@@ -300,11 +434,35 @@ class RCModel(object):
                 labels = tf.one_hot(labels, tf.shape(probs)[1], axis=1)
                 losses = - tf.reduce_sum(labels * tf.log(probs + epsilon), 1)
             return losses
+        # sigmoid loss
+        def sparse_sig_loss(probs, labels, epsilon=1e-9, scope=None):
+            """
+            negative log likelyhood loss
+            """
+            with tf.name_scope(scope, "sig_loss"):
+                # labels = tf.one_hot(labels, tf.shape(probs)[1], axis=1)
+                labels = tf.cast(labels, tf.float32)
+                losses = - tf.reduce_sum(labels * tf.log(probs + epsilon) + (1-labels) * tf.log(1 - probs + epsilon), 1)
+            return losses
 
         self.start_loss = sparse_nll_loss(probs=self.start_probs, labels=self.start_label)
         self.end_loss = sparse_nll_loss(probs=self.end_probs, labels=self.end_label)
+        self.doc_loss = sparse_sig_loss(probs=self.passage_score, labels=self.real_doc_index)
+        # 改成均方差试试
+        # labels = tf.one_hot(self.answer_loss, tf.shape(self.passage_score)[1], axis=1)
+        # self.doc_loss = 8 * tf.reduce_mean(tf.square(labels-self.passage_score))
+
+        # 计算一个均方差
+        # self.can_loss = 4 * tf.reduce_mean(tf.square(self.can_answer-self.can_answer_score_train))
+
+        self.print_docloss = tf.reduce_mean(self.doc_loss)
+        self.print_ansloss = tf.reduce_mean(tf.add(self.start_loss, self.end_loss))
+
         self.all_params = tf.trainable_variables()
+        # self.loss = tf.reduce_mean(tf.add(self.start_loss, self.end_loss))
         self.loss = tf.reduce_mean(tf.add(self.start_loss, self.end_loss))
+        # self.loss += self.can_loss
+        self.loss += self.print_docloss
         if self.weight_decay > 0:
             with tf.variable_scope('l2_loss'):
                 l2_loss = tf.add_n([tf.nn.l2_loss(v) for v in self.all_params])
@@ -337,32 +495,55 @@ class RCModel(object):
         pad_id = self.vocab.get_id(self.vocab.pad_token)
         total_num, total_loss = 0, 0
         log_every_n_batch, n_batch_loss = 100, 0
+        n_batch_doc, n_batch_ans, n_batch_can = 0, 0, 0
+        # self.answer_index [[0, 3], [1, 1], [2, 4]]
+        # self.answer_loss [3, 1, 4]
+        # self.real_doc_index [[1, 0, 1, 0, 0], [1, 0, 0, 1, 1]]
         for bitx, batch in enumerate(train_batches, 1):     # 这里才开始真正使用train_batches， 每次调用batch size个
             feed_dict = {self.p['data']: batch['passage_token_ids'],
                          self.q['data']: batch['question_token_ids'],
                          self.p_length: batch['passage_length'],
                          self.q_length: batch['question_length'],
                          self.start_label: batch['start_id'],
-                         self.end_label: batch['end_id']}
-            _, loss = self.sess.run([self.train_op, self.loss], feed_dict)
+                         self.end_label: batch['end_id'],
+                         self.answer_index: batch['answer_index'],
+                         self.answer_loss: batch['answer_loss'],
+                         self.can_answer: batch['can_answer'],
+                         self.real_doc_index: batch['answer_label']}
+            # _, loss = self.sess.run([self.train_op, self.loss], feed_dict)
+            _, loss, doc_loss, answer_loss, score = self.sess.run([self.train_op, self.loss, self.print_docloss,
+                                                                      self.print_ansloss, self.passage_score], feed_dict)
+            # _, loss, doc_loss, answer_loss, can_loss = self.sess.run([self.train_op, self.loss, self.print_docloss,
+            #                                                 self.print_ansloss, self.can_loss], feed_dict)
             total_loss += loss * len(batch['raw_data'])
             total_num += len(batch['raw_data'])
             n_batch_loss += loss
+
+            n_batch_doc += doc_loss
+            n_batch_ans += answer_loss
+            # n_batch_can += can_loss
             if log_every_n_batch > 0 and bitx % log_every_n_batch == 0:
-                self.logger.info('Average loss from batch {} to {} is {}'.format(
-                    bitx - log_every_n_batch + 1, bitx, n_batch_loss / log_every_n_batch))
+                self.logger.info('Average loss from batch {} to {} is {} and doc is {}, ans is {}, can_loss is {}'.format(
+                    bitx - log_every_n_batch + 1, bitx, n_batch_loss / log_every_n_batch,
+                    n_batch_doc / log_every_n_batch, n_batch_ans / log_every_n_batch, n_batch_can / log_every_n_batch))
                 n_batch_loss = 0
+                n_batch_doc = 0
+                n_batch_ans = 0
+                n_batch_can = 0
                 if bitx % 800 == 0:
+                    self.logger.info('compute passage_score is {}'.format(score))
+                    self.logger.info('real passage_score is {}'.format(batch['answer_label']))
                     self.logger.info('Evaluating the model after epoch {} iters {}'.format(epoch, bitx))
+
                     if data.dev_set is not None:
                         eval_batches = data.gen_mini_batches('dev', batch_size, pad_id, shuffle=False, training=False)
                         eval_loss, bleu_rouge = self.evaluate(eval_batches)
                         self.logger.info('Dev eval loss {}'.format(eval_loss))
                         self.logger.info('Dev eval result: {}'.format(bleu_rouge))
 
-                        if bleu_rouge['Bleu-4'] > max_bleu_4:
+                        if bleu_rouge['Rouge-L'] > max_bleu_4:
                             self.save(save_dir, save_prefix, rand_seed)
-                            max_bleu_4 = bleu_rouge['Bleu-4']
+                            max_bleu_4 = bleu_rouge['Rouge-L']
                     else:
                         self.logger.warning('No dev set is loaded for evaluation in the dataset!')
 
@@ -399,9 +580,9 @@ class RCModel(object):
                     self.logger.info('Dev eval loss {}'.format(eval_loss))
                     self.logger.info('Dev eval result: {}'.format(bleu_rouge))
 
-                    if bleu_rouge['Bleu-4'] > max_bleu_4:
+                    if bleu_rouge['Rouge-L'] > max_bleu_4:
                         self.save(save_dir, save_prefix, rand_seed)
-                        max_bleu_4 = bleu_rouge['Bleu-4']
+                        max_bleu_4 = bleu_rouge['Rouge-L']
                 else:
                     self.logger.warning('No dev set is loaded for evaluation in the dataset!')
             else:
@@ -419,22 +600,48 @@ class RCModel(object):
         """
         pred_answers, ref_answers = [], []
         total_loss, total_num = 0, 0
+        error = 0
         for b_itx, batch in enumerate(eval_batches):
             feed_dict = {self.p['data']: batch['passage_token_ids'],
                          self.q['data']: batch['question_token_ids'],
                          self.p_length: batch['passage_length'],
                          self.q_length: batch['question_length'],
                          self.start_label: batch['start_id'],
-                         self.end_label: batch['end_id']}
-            start_probs, end_probs, loss = self.sess.run([self.start_probs,
-                                                          self.end_probs, self.loss], feed_dict)
+                         self.end_label: batch['end_id'],
+                         self.answer_index: batch['answer_index'],
+                         self.answer_loss: batch['answer_loss'],
+                         self.can_answer: batch['can_answer'],
+                         self.real_doc_index: batch['answer_label']}
+            # start_probs, end_probs, loss = self.sess.run([self.start_probs,
+            #                                               self.end_probs, self.loss], feed_dict)
+
+            start_probs, end_probs, loss, doc_index = self.sess.run(
+                [self.start_probs_pre, self.end_probs_pre, self.loss, self.doc_index], feed_dict)
+
+            # start_probs, end_probs, can_answer, loss, doc_index = self.sess.run([self.start_probs_pre, self.end_probs_pre,
+            #                                                           self.can_answer_score_pre, self.loss, self.doc_index], feed_dict)
+            # return start_probs:(batch, tokens) 根据can——answer index抽取出来能够回答的问题
+
+            # 计算的can——answer中大于0.5的置1，否则为0
+            # can_int = np.where(can_answer > 0.5, 1, 0)
+            # 这个是计算的是否回答准不准
+            # error += np.sum(np.power((batch['can_answer'] - can_int), 2))
+            # 这个是算的预测的文档准不准
+            error += np.sum([doc_index[i] != batch['answer_loss'][i] for i in range(len(doc_index))])
+            # data = [doc_index[i] != batch['answer_loss'][i] for i in range(len(doc_index))]
+            self.logger.info('real: {}'.format(batch['answer_loss']))
+            self.logger.info('pred: {}'.format(doc_index))
+            # target_names = ['class 0', 'class 1']0
+
+            # print(classification_report(batch['can_answer'], can_int))
 
             total_loss += loss * len(batch['raw_data'])
             total_num += len(batch['raw_data'])
 
             padded_p_len = len(batch['passage_token_ids'][0])
+            # for sample, start_prob, end_prob, can in zip(batch['raw_data'], start_probs, end_probs, can_int):
             for sample, start_prob, end_prob in zip(batch['raw_data'], start_probs, end_probs):
-
+                # if can:
                 best_answer = self.find_best_answer(sample, start_prob, end_prob, padded_p_len)
                 if save_full_info:
                     sample['pred_answers'] = [best_answer]
@@ -462,6 +669,7 @@ class RCModel(object):
 
         # this average loss is invalid on test set, since we don't have true start_id and end_id
         ave_loss = 1.0 * total_loss / total_num
+        ave_error = 1.0 * error / total_num
         # compute the bleu and rouge scores if reference answers is provided
         if len(ref_answers) > 0:
             pred_dict, ref_dict = {}, {}
@@ -473,6 +681,7 @@ class RCModel(object):
             bleu_rouge = compute_bleu_rouge(pred_dict, ref_dict)
         else:
             bleu_rouge = None
+        self.logger.info('aveage_doc_index_error: {}'.format(ave_error))
         return ave_loss, bleu_rouge
 
     def find_best_answer(self, sample, start_prob, end_prob, padded_p_len):
